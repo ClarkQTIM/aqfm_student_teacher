@@ -13,7 +13,7 @@ Checks
                the saved per-dataset runs and compare the tables to the saved
                TT_DATASETS.csv and ADDONS_DATASETS.csv
   4. --full    additionally re-run the complete student pipeline for one p=4
-               dataset (~5 min) and compare every fold's AUC to the saved run
+               dataset (~15 min) and compare every fold's AUC to the saved run
 
 Usage:
   python tools/verify_reproduction.py --run runs/tau_sweep [--full]

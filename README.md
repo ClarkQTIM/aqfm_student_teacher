@@ -69,8 +69,8 @@ python tools/overview_numbers.py --runs runs
 ```bash
 python -m pytest -q tests
 python tools/verify_reproduction.py --run runs/tau_sweep          # simulations, labels, score tables (~minutes)
-python tools/verify_reproduction.py --run runs/tau_sweep --full   # + one complete student run (~5 more minutes)
-python tools/overview_numbers.py --runs runs                      # all 47 quoted numbers
+python tools/verify_reproduction.py --run runs/tau_sweep --full   # + one complete student run (~15 more minutes)
+python tools/overview_numbers.py --runs runs                      # all 48 quoted numbers
 ```
 
 `verify_reproduction.py` writes only to `_verify/` inside the repo and never modifies `runs/`.
