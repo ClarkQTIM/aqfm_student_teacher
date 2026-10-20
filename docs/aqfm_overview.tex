@@ -1,0 +1,411 @@
+\documentclass[11pt]{article}
+% Running overview for colleagues (informal). For two columns: add "twocolumn" to the class options.
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage[authoryear,round]{natbib}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+\setlength{\parskip}{0.5em}
+\setlength{\parindent}{0pt}
+
+\title{\bfseries When does a quantum feature map do something classical methods can't copy?\\[0.3em]
+\large A running overview of the teacher--student experiments}
+\author{Christopher Clark}
+\date{Draft, \today}
+
+\begin{document}
+\maketitle
+
+% =====================================================================
+\section{What we're doing and why}
+
+\textbf{What we're doing and why.} Quantum feature maps take each sample, use it to steer a small quantum
+system, and read out a set of measurements as new features. The hope is that some of those features are hard
+to get any other way. Several papers report that these maps beat classical models on biomedical data
+\citep[e.g.][]{Simen2025}. But when we tried to reproduce those results, ordinary classical models matched them,
+and our own run on 55 datasets showed no general advantage. The trouble is that a loss on real data is
+ambiguous: maybe the quantum map can't produce anything special, or maybe those datasets just didn't need it.
+So we flipped the question around. We let the quantum map \emph{make} the labels itself, then checked who can
+learn them: the full quantum simulation, cheaper non-quantum versions of the same map (one that averages the
+qubits' influence on each other, and one with no interaction at all), and standard classical models. Doing
+this across the map's settings (coupling strength $J$, anneal time $\tau$, which measurements we read out, and
+the number of qubits) tells us where, if anywhere, the quantum part is doing something nothing else can copy.
+That's also where it would be worth looking for real data, and spending hardware time.
+
+\textbf{Why it might work.} There's good reason to think quantum systems \emph{can} produce patterns that
+classical methods struggle with. Researchers have built carefully designed examples where a quantum learner
+provably beats any classical one \citep{Liu2021}. The physics community has also argued for years that
+systems of interacting qubits, much like ours, make rich, useful features for machine learning
+\citep{Fujii2017}. And our own first experiment found one case where neither classical models nor the cheap
+non-quantum versions of the map could keep up.
+
+\textbf{Why it might not.} The field's recent track record leans the other way. A lot of quantum machine
+learning models turn out to be built from fairly simple ingredients, essentially sums of waves
+\citep{Schuld2021}, and classical tricks can often mimic them closely
+\citep{Schreiber2023,Landman2022,Sweke2025}. With enough training data, classical learners often catch up
+even on labels a quantum system produced \citep{Huang2021}. Careful head-to-head benchmarks usually find
+classical models do just as well \citep{Bowles2024}, and models that are easy to train tend to be the ones
+that are also easy to simulate classically \citep{Cerezo2023}. Two things specific to our setup also cut
+against us. First, we couple every qubit to every other one, which is exactly the case where the cheap
+``averaged'' version gets \emph{more} accurate as the system grows, so any advantage could shrink at larger
+sizes. Second, at the sizes we can test (up to 8 qubits) the quantum simulation itself runs on an ordinary
+computer, so even a clear win here would show that the map's \emph{structure} fits certain data well, not that
+a quantum computer is needed.
+
+% =====================================================================
+\section{How the data are made}
+
+Each dataset is a table of random numbers plus a 0/1 label for every row. The numbers themselves carry no
+meaning; all the structure is in how the labels are made. We run the quantum map (or one of its classical
+versions) on every row, combine its measurements into a score, and turn the score into a label.
+
+\paragraph{Step 1: inputs.} We draw $n=600$ samples, each with $p$ features, where $p$ is also the number of
+qubits (one qubit per feature). For $p=4$ the inputs are a $600\times4$ matrix of random numbers, one row per
+sample and one column per qubit:
+\begin{equation}
+x^{(m)}\sim\mathcal N(0,I_p),\qquad m=1,\dots,600 .
+\end{equation}
+Each column is standardized and clipped at $\pm3$:
+$z_k=\mathrm{clip}\big((x_k-\bar x_k)/\mathrm{sd}(x_k),\,-3,\,3\big)$.
+In the main run, every dataset with the same $p$ uses the \emph{same} 600 inputs, so comparisons across
+settings are paired.
+
+\paragraph{Step 2: the map.} Each sample sets the fields on the $p$ qubits. Starting from all qubits pointing
+along $+x$, $|\psi(0)\rangle=|+\rangle^{\otimes p}$, we anneal over a time $\tau$:
+\begin{equation}
+H(s)=(1-s)\Big(-\sum_{i=1}^{p}X_i\Big)+s\Big(-\sum_{i=1}^{p}z_iZ_i-J\sum_{i<j}Z_iZ_j\Big),\qquad s=t/\tau\in[0,1].
+\end{equation}
+The first term is the starting ``driver'' and fades out. The second is the data Hamiltonian and fades in:
+feature $z_i$ pushes qubit $i$ up or down, and $J$ makes every pair of qubits prefer to point the same way.
+At the end ($s=1$) we record, for every qubit and every pair,
+\begin{equation}
+\langle X_i\rangle,\ \langle Y_i\rangle,\ \langle Z_i\rangle,\qquad
+\langle X_iX_j\rangle,\ \langle Y_iY_j\rangle,\ \langle Z_iZ_j\rangle .
+\end{equation}
+
+\paragraph{Step 3: three ways to compute the same anneal (the ``teachers'').}
+\begin{itemize}\setlength{\itemsep}{2pt}
+\item \textbf{Exact (Q):} the full quantum state ($2^p$ numbers), evolved by the Schr\"odinger
+equation.\footnote{Numerically: $N=\max(400,\lceil160\tau\rceil)$ time steps; each step applies half of the
+data term (as phases), the driver (as rotations of every qubit), then the other half of the data term
+(Strang splitting).}
+\item \textbf{Mean-field (MF):} each qubit evolves on its own, feeling its own feature plus the
+\emph{average} pull of the others,
+\begin{equation}
+H_i(t)=-(1-s)X_i-s\,h_i(t)\,Z_i,\qquad h_i(t)=z_i+J\sum_{j\ne i}\langle Z_j\rangle_t ,
+\end{equation}
+with the averages updated at every step and pair terms taken as products,
+$\langle X_iX_j\rangle=\langle X_i\rangle\langle X_j\rangle$. No entanglement.
+\item \textbf{No coupling ($J=0$):} as mean-field with $h_i=z_i$. Each qubit anneals alone, so every feature
+depends on one input only.
+\end{itemize}
+
+\paragraph{Step 4: the settings.} For each $p$ we set $J=c/(p-1)$ with $c\in\{0.5,1,2,4,8\}$
+(Table~\ref{tab:J}).
+\begin{table}[H]\centering\small
+\caption{Coupling values $J$ used at each $p$.}\label{tab:J}
+\begin{tabular}{@{}cccc@{}}\toprule
+$c$ & $p=4$ & $p=6$ & $p=8$\\\midrule
+0.5 & 0.167 & 0.100 & 0.071\\
+1 & 0.333 & 0.200 & 0.143\\
+2 & 0.667 & 0.400 & 0.286\\
+4 & 1.333 & 0.800 & 0.571\\
+8 & 2.667 & 1.600 & 1.143\\\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{center}\small
+\begin{tabular}{@{}ll@{}}\toprule
+setting & values\\\midrule
+qubits $p$ & 4, 6, 8\\
+coupling $J$ & Table~\ref{tab:J}\\
+anneal time $\tau$ & 0.5, 1, 1.5, 2, 3, 4, 5, 7, 10, 15, 20, 40 \quad (earlier run: 1, 5)\\
+readout & \textbf{full}: all $\langle X_i\rangle,\langle Y_i\rangle,\langle Z_i\rangle$ ($3p$ numbers);\\
+        & \textbf{$Z$-only}: $\langle Z_i\rangle$ ($p$ numbers; what an annealer measures)\\\bottomrule
+\end{tabular}
+\end{center}
+(The earlier run also tried a pair-term readout and the single sum $\sum_i\langle X_i\rangle$.)
+
+\paragraph{Step 5: from measurements to a label.} Collect the readout into a matrix $F$, one row per sample.
+Standardize each column, draw random weights, and form a score:
+\begin{equation}
+\tilde F_k=\frac{F_k-\bar F_k}{\mathrm{sd}(F_k)},\qquad w\sim\mathcal N(0,I),\qquad
+\mathrm{score}=\mathrm{standardize}\big(\tilde F w\big).
+\end{equation}
+Then flip a weighted coin:
+\begin{equation}
+y\sim\mathrm{Bernoulli}\big(\sigma(\mathrm{score}/T)\big),\qquad \sigma(u)=\frac{1}{1+e^{-u}},\quad T=0.25 .
+\end{equation}
+The random weights make the label a \emph{generic} function of the map's output rather than one we picked.
+The temperature $T$ makes the labels noisy, as in real data: even a model that knew the true score would only
+reach AUC $\approx0.95$. Weights and coin flips are seeded by the dataset's name, so every dataset can be
+regenerated exactly.
+
+\paragraph{Step 6: how many.} For each ($p$, $\tau$, readout) we make 12 datasets: 2 with no coupling (two
+seeds), plus one mean-field and one exact for each of the 5 couplings. That is
+$3\times12\times2\times12=864$ datasets in the main run (216 in the earlier one). The learners only ever see
+$(x,y)$, i.e.\ the $600\times p$ input matrix and the 600 labels.
+
+% =====================================================================
+\section{Who tries to learn the labels (the students)}
+
+Every student sees the same thing: the $600\times p$ inputs and the 600 labels. Each one turns the inputs into
+features in its own way and fits a \textbf{logistic regression} on them (the nonlinear learners use their own
+model instead). The students differ only in \emph{which} features they are allowed to use.
+
+\begin{table}[H]\centering\small
+\caption{The students and their menus. The 9 measurement groups are $X$, $Y$, $Z$, all three, $XX$, $YY$,
+$ZZ$, all pairs, and everything. The full list of classical and nonlinear options is in
+Appendix~\ref{app:opponents}.}\label{tab:students}
+\begin{tabular}{@{}p{2.6cm}p{7.6cm}p{3.2cm}@{}}\toprule
+student & where its features come from & options to choose from\\\midrule
+\textbf{Exact} & the exact quantum simulation & 9 groups $\times$ 5 couplings $\times$ 12 anneal times $=540$\\
+\textbf{Mean-field} & the mean-field simulation & 540 (same menu)\\
+\textbf{No coupling} & the $J=0$ simulation & $9\times12=108$\\
+\textbf{Ground state} & the lowest-energy spin arrangement (the $\tau\to\infty$ end point) & 3 groups $\times$ 5 couplings $=15$\\
+\textbf{Classical features} & generic feature expansions (Fourier, polynomials, splines, \ldots) and 22 tuned feature maps & $\sim$48\\
+\textbf{Nonlinear} & the raw inputs, fed directly to gradient boosting, an RBF-kernel SVM, or a small neural net & 22 settings\\\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Choosing and testing fairly (nested cross-validation).} The 600 samples are split into 5 outer
+folds; each round, a student trains on 480 and is tested on the remaining 120. Inside the 480 it splits again
+into 3 inner folds and uses them to pick its best option and its regularization strength $C$ (from $10^{-3}$ to
+$10^{2}$). It then refits that choice on all 480 and is scored on the held-out 120. The student's score is the
+average test AUC over the 5 rounds. Every student uses the \emph{same} folds, so comparisons are paired, and
+methods that learn from the labels (such as the GAM shape fits) are refitted inside each fold, so the
+held-out samples never leak into the choice.
+
+\paragraph{The comparison.}
+\begin{equation}
+\text{margin}=\mathrm{AUC}_{\text{exact}}-\max\big(\mathrm{AUC}\ \text{of every other student}\big).
+\end{equation}
+
+\paragraph{The open-book student.} The exact student's menu always contains the exact recipe the teacher
+used (same simulator, coupling, anneal time and measurements). On exact-teacher data it therefore acts as the
+\emph{ceiling} (about 0.94 out of a possible 0.95), and what we are really measuring is whether anyone
+\emph{else} can imitate it. This cuts both ways: on mean-field teacher data the mean-field student is the
+open-book one, and the exact student cannot imitate \emph{it} either.
+
+% =====================================================================
+
+% =====================================================================
+\section{What we found}
+
+\textbf{Headline.} On labels the quantum map made itself, classical methods and the cheap non-quantum
+versions of the map catch up almost everywhere. The exception is one region: strong coupling, a medium-to-long
+anneal, and a readout that includes $\langle X_i\rangle$ and $\langle Y_i\rangle$. There, nothing we tried
+catches up.
+
+\begin{table}[H]\centering\small
+\caption{Exact-teacher datasets by region. The \emph{margin} is how far the exact quantum student is ahead of
+the \emph{best} opponent (in AUC), with all opponents included (classical feature models, tuned maps,
+nonlinear learners, and the mean-field, no-coupling and ground-state versions of the map). $c$ is the coupling
+level of Table~\ref{tab:J}.}\label{tab:regions}
+\begin{tabular}{@{}p{3.3cm}p{3.6cm}cccc@{}}\toprule
+region & settings & datasets & \shortstack{median\\margin} & \shortstack{margin\\$\ge0.05$} & \shortstack{catches\\up?}\\\midrule
+$Z$-only readout & any $c$, any $\tau$ & 180 & 0.00 & 0\% & yes\\
+weak coupling or short anneal & $c=0.5$, or $\tau\le1$ & 60 & 0.00 & 0\% & yes\\
+in between & $c=1$ & 30 & 0.03 & 30\% & sometimes\\
+edges & $c\ge2$ at $\tau=1.5$--2, or $\tau=40$ & 27 & 0.04 & 33\% & sometimes\\
+\textbf{the window} & $\boldsymbol{c\ge2}$, $\boldsymbol{\tau=3}$--\textbf{20}, \textbf{full readout} & \textbf{63} & \textbf{0.15} & \textbf{87\%} & \textbf{no}\\\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{1. Inside the window, nobody gets close.} The exact student scores about 0.94 (the ceiling is about
+0.95). The best opponent reaches about 0.79, which is only about 65\% of the achievable signal above chance.
+That holds against every opponent we tried: Fourier, polynomial and spline features (up to 128 per input),
+22 tuned feature maps, gradient boosting, an RBF-kernel SVM and a small neural net on the raw inputs, and the
+mean-field, no-coupling and ground-state versions of the map. Table~\ref{tab:window} shows where the window
+sits in coupling and anneal time.
+
+\begin{table}[H]\centering\small
+\caption{Full readout: number of exact-teacher datasets (out of 3, one per $p$) where the exact student beats
+every opponent by at least 0.05 AUC. Rows are coupling levels (Table~\ref{tab:J}), columns anneal times
+$\tau$, with every opponent included (classical features, tuned maps, nonlinear learners, and the
+mean-field, no-coupling and ground-state students). With $Z$-only readout every cell is 0.}\label{tab:window}
+\begin{tabular}{@{}ccccccccccccc@{}}\toprule
+$c$ $\backslash$ $\tau$ & 0.5 & 1 & 1.5 & 2 & 3 & 4 & 5 & 7 & 10 & 15 & 20 & 40\\\midrule
+0.5 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0\\
+1   & 0 & 0 & 0 & 0 & 1 & 1 & 1 & 2 & 0 & 1 & 2 & 1\\
+2   & 0 & 0 & 0 & 2 & \textbf{3} & \textbf{3} & \textbf{3} & \textbf{3} & \textbf{3} & \textbf{3} & \textbf{3} & 0\\
+4   & 0 & 0 & 0 & 0 & 2 & \textbf{3} & \textbf{3} & \textbf{3} & \textbf{3} & \textbf{3} & \textbf{3} & 3\\
+8   & 0 & 0 & 1 & 0 & 0 & 1 & 2 & 2 & \textbf{3} & \textbf{3} & \textbf{3} & 3\\\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{2. Being hard for classical models isn't proof of anything quantum.} Labels made by the
+\emph{mean-field} simulator, which is classical and cheap, are just as hard for the same opponents in that
+region: they reach about 0.71, against 0.95 for the matching mean-field student. So ``it takes a lot of
+Fourier or polynomial features to catch up'' is not, on its own, evidence for the quantum part. The fair test
+is always the map's own classical version.
+
+\textbf{3. Entanglement alone isn't enough.} Short anneals ($\tau=1$) at strong coupling are highly entangled
+(about 0.98 on the Meyer--Wallach global entanglement, which runs from 0 for no entanglement to 1 for maximal; it is the average over qubits of $1-|\vec r_i|^2$, with $\vec r_i=(\langle X_i\rangle,\langle Y_i\rangle,\langle Z_i\rangle)$, equivalently the average single-qubit linear entropy \citep{Meyer2002,Brennen2003}), yet their labels are easy to copy (margin $\approx0$).
+What matters is whether the label \emph{function} can be imitated, not whether the state is entangled.
+
+\textbf{Still pending.} Whether the window survives larger systems ($p$ up to 12; running).
+
+% =====================================================================
+\section{Shot noise: does it survive realistic measurement?}
+
+On hardware every measurement is an average over a finite number of repetitions (``shots''). We re-ran the
+exact student with each measurement replaced by its estimate from $S$ shots,
+\begin{equation}
+\widehat{\langle P\rangle}=\frac{2k}{S}-1,\qquad k\sim\mathrm{Binomial}\Big(S,\tfrac{1+\langle P\rangle}{2}\Big),
+\end{equation}
+keeping the labels and all classical opponents noiseless (they are computed exactly on an ordinary computer).
+
+\begin{table}[H]\centering\small
+\caption{Shot noise, exact teachers in the window (63 datasets). Only the exact student gets noise.}\label{tab:shots}
+\begin{tabular}{@{}lccc@{}}\toprule
+shots per measurement & exact student AUC & median margin & margin $\ge0.05$\\\midrule
+noiseless & 0.941 & 0.149 & 87\%\\
+10{,}000 & 0.937 & 0.144 & 87\%\\
+\textbf{1{,}000} & \textbf{0.925} & \textbf{0.124} & \textbf{83\%}\\
+100 & 0.856 & 0.062 & 56\%\\\bottomrule
+\end{tabular}
+\end{table}
+
+The window is essentially intact at 1{,}000--10{,}000 shots and halves at 100, where the exact student itself
+becomes too noisy. Even at 100 shots the core of the window (coupling levels 2--4, $\tau=4$--10) still wins on
+most datasets. Outside the window nothing changes. The $\tau=40$ cells, whose advantage rested on very small
+$\langle X_i\rangle/\langle Y_i\rangle$ signals, lose it entirely at 1{,}000 shots, as expected
+(Table~\ref{tab:window1000}).
+
+\begin{table}[H]\centering\small
+\caption{As Table~\ref{tab:window}, but with the exact student's measurements estimated from 1{,}000 shots.}\label{tab:window1000}
+\begin{tabular}{@{}ccccccccccccc@{}}\toprule
+$c$ $\backslash$ $\tau$ & 0.5 & 1 & 1.5 & 2 & 3 & 4 & 5 & 7 & 10 & 15 & 20 & 40\\\midrule
+0.5 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0 & 0\\
+1   & 0 & 0 & 0 & 0 & 1 & 1 & 1 & 2 & 0 & 1 & 1 & 0\\
+2   & 0 & 0 & 0 & 0 & \textbf{3} & \textbf{3} & \textbf{3} & \textbf{3} & \textbf{3} & \textbf{3} & \textbf{3} & 0\\
+4   & 0 & 0 & 0 & 0 & 2 & \textbf{3} & \textbf{3} & \textbf{3} & \textbf{3} & 2 & \textbf{3} & 0\\
+8   & 0 & 0 & 0 & 0 & 0 & 0 & 2 & 2 & \textbf{3} & \textbf{3} & 2 & 0\\\bottomrule
+\end{tabular}
+\end{table}
+
+A practical note: ``1{,}000 shots'' is per measurement basis per sample. The full readout needs three bases
+($X$, $Y$, $Z$), so about 3{,}000 circuit runs per sample, or about $1.8$ million per (coupling, $\tau$)
+setting for 600 samples.
+
+% =====================================================================
+% Planned sections (to be written together, one at a time):
+
+
+% \section{Scope}
+% \section{Next steps}            spotting window-like datasets beforehand; scaling run
+% =====================================================================
+
+\bibliographystyle{plainnat}
+\begin{thebibliography}{10}\small
+% TODO: verify first-author initial and author list
+\bibitem[Simen et~al.(2025)]{Simen2025}
+Simen et~al. Digitized counterdiabatic quantum feature extraction. arXiv:2510.13807, 2025.
+
+\bibitem[Liu et~al.(2021)]{Liu2021}
+Y.~Liu, S.~Arunachalam, K.~Temme. A rigorous and robust quantum speed-up in supervised machine learning.
+\emph{Nature Physics}, 2021. \href{https://arxiv.org/abs/2010.02174}{arXiv:2010.02174}.
+
+\bibitem[Fujii and Nakajima(2017)]{Fujii2017}
+K.~Fujii, K.~Nakajima. Harnessing disordered-ensemble quantum dynamics for machine learning.
+\emph{Phys.\ Rev.\ Applied}, 2017. \href{https://arxiv.org/abs/1602.08159}{arXiv:1602.08159}.
+
+% TODO: verify
+\bibitem[Schuld et~al.(2021)]{Schuld2021}
+M.~Schuld, R.~Sweke, J.~J.~Meyer. Effect of data encoding on the expressive power of variational quantum
+machine learning models. \emph{Phys.\ Rev.\ A} 103, 032430, 2021.
+
+\bibitem[Schreiber et~al.(2023)]{Schreiber2023}
+F.~J.~Schreiber, J.~Eisert, J.~J.~Meyer. Classical surrogates for quantum learning models.
+\emph{Phys.\ Rev.\ Lett.} 131, 100803, 2023. \href{https://link.aps.org/doi/10.1103/PhysRevLett.131.100803}{doi}.
+
+\bibitem[Landman et~al.(2022)]{Landman2022}
+J.~Landman, S.~Thabet, C.~Dalyac, H.~Mhiri, E.~Kashefi. Classically approximating variational quantum machine
+learning with random Fourier features. \href{https://arxiv.org/abs/2210.13200}{arXiv:2210.13200}, 2022.
+
+\bibitem[Sweke et~al.(2025)]{Sweke2025}
+R.~Sweke et~al. Potential and limitations of random Fourier features for dequantizing quantum machine
+learning. \emph{Quantum}, 2025. \href{https://quantum-journal.org/papers/q-2025-02-20-1640/}{link}.
+
+\bibitem[Huang et~al.(2021)]{Huang2021}
+H.-Y.~Huang et~al. Power of data in quantum machine learning. \emph{Nature Communications}, 2021.
+\href{https://arxiv.org/abs/2011.01938}{arXiv:2011.01938}.
+
+\bibitem[Bowles et~al.(2024)]{Bowles2024}
+J.~Bowles, S.~Ahmed, M.~Schuld. Better than classical? The subtle art of benchmarking quantum machine learning
+models. \href{https://arxiv.org/abs/2403.07059}{arXiv:2403.07059}, 2024.
+
+\bibitem[Meyer and Wallach(2002)]{Meyer2002}
+D.~A.~Meyer, N.~R.~Wallach. Global entanglement in multiparticle systems. \emph{J.\ Math.\ Phys.}, 2002.
+\href{https://arxiv.org/abs/quant-ph/0108104}{arXiv:quant-ph/0108104}.
+
+\bibitem[Brennen(2003)]{Brennen2003}
+G.~K.~Brennen. An observable measure of entanglement for pure states of multi-qubit systems.
+\emph{Quantum Inf.\ Comput.}, 2003. \href{https://arxiv.org/abs/quant-ph/0305094}{arXiv:quant-ph/0305094}.
+
+\bibitem[Cerezo et~al.(2023)]{Cerezo2023}
+M.~Cerezo et~al. Does provable absence of barren plateaus imply classical simulability?
+\href{https://arxiv.org/abs/2312.09121}{arXiv:2312.09121}, 2023.
+\end{thebibliography}
+
+% =====================================================================
+\appendix
+\section{Full list of opponents}\label{app:opponents}
+
+Throughout, $q=p(p-1)/2$ is the number of qubit pairs, inputs are the standardized $z$, and every option is
+followed by logistic regression with $C$ chosen by inner cross-validation unless stated otherwise.
+
+\paragraph{Generic feature expansions (no labels used to build them).} Each size is also scored on its own
+to give the ``how many features does it take'' curves.
+\begin{itemize}\setlength{\itemsep}{1pt}
+\item \textbf{Fourier:} $\sin(kz_j)$, $\cos(kz_j)$ for increasing $k$, filled evenly across features, with
+$D=m\,p$ features for $m\in\{1,2,4,8,16,32,64,128\}$.
+\item \textbf{Random Fourier features} (approximating an RBF kernel, $\gamma=1/p$) at the same sizes.
+\item \textbf{Polynomials} of degree 1--6 (all products up to that degree), kept while $D\le128p$.
+\item \textbf{Cubic splines} per feature with 3, 5, 9, 17, 33 or 65 knots.
+\end{itemize}
+
+\paragraph{The 22 tuned feature maps.}
+\begin{itemize}\setlength{\itemsep}{1pt}
+\item \textbf{Raw} inputs ($p$ features).
+\item \textbf{Balanced Fourier} and \textbf{random Fourier} at three fixed sizes, $p$, $3p$ and $3p+3q$
+(6 maps).
+\item \textbf{Hermite polynomials:} per feature (degrees 1--3), pairwise products (degree 1, and degrees
+1--3), and both together (4 maps).
+\item \textbf{Quadratic splines} per feature (2 knots) and \textbf{pairwise interactions} $z_iz_j$ with the raw
+inputs (2 maps).
+\item \textbf{Label-matched Fourier:} for each feature, the frequencies most correlated with the label
+(periodogram peaks), with $p$ or $3p$ features (2 maps; learned from the training labels).
+\item \textbf{GAM shapes:} a smooth function of each feature, fitted to the labels; their pairwise products;
+and both together (3 maps; learned from the labels).
+\item \textbf{GA2M:} per-feature shapes plus pairwise interaction shapes fitted jointly to the labels; the pair
+part alone, and everything (2 maps; learned from the labels).
+\item \textbf{Symmetric aggregates:} splines of $\mathrm{mean}(z)$ and $\mathrm{mean}(z^2)$ across features,
+alone and appended to the raw inputs (2 maps).
+\end{itemize}
+Maps marked ``learned from the labels'' are refitted inside every cross-validation fold. The
+\emph{classical features} student picks the best of all generic sizes and the 22 maps by inner
+cross-validation.
+
+\paragraph{Nonlinear learners on the raw inputs} (22 settings, best per learner and overall chosen by inner
+cross-validation):
+\begin{itemize}\setlength{\itemsep}{1pt}
+\item \textbf{Gradient boosting} (histogram-based, 300 rounds): learning rate $\in\{0.05,0.1\}$, maximum
+leaves per tree $\in\{8,31\}$ (4 settings).
+\item \textbf{RBF-kernel SVM:} $C\in\{0.3,1,3,10,30\}$, $\gamma\in\{0.3,1,3\}/p$ (15 settings).
+\item \textbf{Neural net:} two hidden layers of 64 units, weight penalty $\in\{10^{-4},10^{-2},1\}$, early
+stopping (3 settings).
+\end{itemize}
+
+\paragraph{The map's own students.} Exact, mean-field and no-coupling students choose among the 9 measurement
+groups ($X$, $Y$, $Z$, $XYZ$, $XX$, $YY$, $ZZ$, all pairs, everything), the 5 couplings of
+Table~\ref{tab:J} (not for $J=0$) and the 12 anneal times. The ground-state student chooses among the spins
+$\sigma_i$, the pair products $\sigma_i\sigma_j$, or both, at each of the 5 couplings.
+
+
+
+\end{document}

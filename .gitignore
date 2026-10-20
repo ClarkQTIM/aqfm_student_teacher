@@ -1,0 +1,20 @@
+# results of record live here but are large: never commit
+runs/
+_verify/
+
+# caches (kept inside the repo by aqfm_prescreen/__init__.py, never in home)
+__pycache__/
+*.pyc
+.pytest_cache/
+.cupy_cache/
+.pip_cache/
+data/
+
+# LaTeX build output
+docs/*.aux
+docs/*.log
+docs/*.out
+docs/*.fls
+docs/*.fdb_latexmk
+docs/*.pdf
+*.log
