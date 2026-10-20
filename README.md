@@ -25,6 +25,7 @@ tools/
   verify_reproduction.py regenerates simulations, labels and score tables and compares them to the saved run
 tests/                   unit tests (pytest), incl. a check of the simulator against the original runner
 docs/aqfm_overview.tex   the write-up
+docs/screen_plan.md      plan for the screen study (checks fixed before running)
 runs/                    results of record (NOT in git; large)
   tau_sweep/             main run + add-ons  -> Sections 2-5
   teacher_student_v2/    earlier 216-dataset run (cited for counts only)
@@ -81,3 +82,4 @@ It prints the Python and library versions used; save its output next to the run
 
 - Sections 1-5 of the overview: complete, reproducible from `runs/tau_sweep`.
 - Scaling run (`ts_scaling.py`, p = 4-12, 625 datasets): built and tested, not yet run.
+- Screen study: planned in `docs/screen_plan.md`, not yet built.
