@@ -20,6 +20,7 @@ experiments/
   ts_tau_sweep.py        main run: 864 datasets (overview Sections 2-4)
   ts_addons.py           nonlinear opponents and shot noise on an existing run (Sections 4-5)
   ts_scaling.py          scaling to p = 12 (pending)
+  ts_screen.py           screen study: non-AQFM teachers + noisier copies, students on them (docs/screen_plan.md)
 tools/
   overview_numbers.py    recomputes every number in the overview and checks it against the document
   verify_reproduction.py regenerates simulations, labels and score tables and compares them to the saved run
@@ -82,4 +83,4 @@ It prints the Python and library versions used; save its output next to the run
 
 - Sections 1-5 of the overview: complete, reproducible from `runs/tau_sweep`.
 - Scaling run (`ts_scaling.py`, p = 4-12, 625 datasets): built and tested, not yet run.
-- Screen study: planned in `docs/screen_plan.md`, not yet built.
+- Screen study: plan in `docs/screen_plan.md`; teachers and runner built (`ts_screen.py make/look/run`), screen measures not yet.

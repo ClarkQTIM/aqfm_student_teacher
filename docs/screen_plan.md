@@ -201,9 +201,9 @@ The measures take minutes to hours.
    building.
 3. Real data: the feature-to-qubit rule, and the pilot size.
 
-**Amendments:**
+**Amendments:** (numbered, not lettered, so they don't clash with measures A1–A5)
 
-### A1 (2026-10-20, before any screen runs): non-AQFM teachers, and a screen for "resistant, not noisy"
+### Amendment 1 (2026-10-20, before any screen runs): non-AQFM teachers, and a screen for "resistant, not noisy"
 
 **Why.**
 - Every teacher in the library so far is some version of the map. Real biomedical data are
@@ -234,7 +234,7 @@ The measures take minutes to hours.
 | `PAR3` | Π tanh(2zᵢ) over 3 random inputs | parity-like, three inputs |
 | `PARp` | Π tanh(2zᵢ) over all p inputs | parity-like, all inputs jointly |
 | `NET1` | v·tanh(Wz + b), width 16, W ~ N(0, 1/p), b, v ~ N(0,1) | small random neural net, smooth |
-| `NET3` | as NET1, W ~ N(0, 9/p) | small random neural net, sharp |
+| `NET3` | as NET1, W ~ N(0, 9/p) | small random neural net, sharp *(replaced by `NETD`, see Amendment 2)* |
 | `NOISE` | s ~ N(0,1), independent of z | nothing to learn |
 
 - **Size:** 9 teachers × p ∈ {4, 6, 8} × 3 seeds × T ∈ {0.25, 1.0}, giving **162 datasets**.
@@ -286,6 +286,23 @@ rule, they now use the screen score.
 
 **The grant question** is P10 set beside P11. How often does AQFM help on resistant data it
 didn't generate, compared with data it did?
+
+### Amendment 2 (2026-10-20, before any screen runs): `NET3` replaced by a harder net, `NETD`
+
+**Why.** A first look at the labels (`ts_screen.py look`, three quick models, no students run)
+showed that a one-layer random tanh net is close to linear at these weight sizes. At T = 0.25,
+a plain linear model already reached 0.87–0.94 on `NET3` against ceilings of about 0.95, so it
+was just another easy control. That left a gap between "polynomial-reachable" (`PAIR`,
+`TRIPLE`, `MIXED`, `PAR3`) and "resists everything" (`PARp`).
+
+**Change.** `NET3` is replaced by `NETD`: two hidden layers of width 16, tanh, weights
+N(0, 9/fan-in), with its **linear part removed** (least squares on the shared inputs). A linear
+model then has nothing to work with. In a trial of three settings, this one gave a ceiling of
+about 0.95, linear about 0.47, and degree-3 polynomial and boosted trees at 0.60–0.79,
+squarely in the gap. A larger weight scale or a third layer changed little.
+
+`NET1` stays as the easy nonlinear control. The block is still 162 datasets, and no check
+changes.
 
 **Added reference:**
 - C. Cortes, L. D. Jackel, S. A. Solla, V. Vapnik, J. S. Denker (1994), Learning curves: asymptotic values and rate of convergence, *NeurIPS 6*.
