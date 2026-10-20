@@ -66,7 +66,8 @@ def _strang_flip_reference(X, J, tau, n_steps):
 @pytest.mark.parametrize("p,J,tau", [(3, 1.0, 10.0), (5, 0.0, 2.0)])
 def test_strang_reshape_equals_gather(p, J, tau):
     X = np.random.default_rng(1).uniform(-3, 3, (4, p))
-    a = evolve_batch_strang(X, J, tau, 300)
+    from aqfm_prescreen.backend import to_numpy
+    a = to_numpy(evolve_batch_strang(X, J, tau, 300))     # raw state: a GPU array when AQFM_GPU=1
     b = _strang_flip_reference(X, J, tau, 300)
     assert np.max(np.abs(a - b)) < 1e-12
 
