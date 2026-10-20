@@ -304,6 +304,46 @@ squarely in the gap. A larger weight scale or a third layer changed little.
 `NET1` stays as the easy nonlinear control. The block is still 162 datasets, and no check
 changes.
 
+### Amendment 3 (2026-10-20, before any screen measure is scored): exact measure definitions
+
+These turn Amendment 1's measure list into exact definitions. The code is
+`experiments/screen_measures.py`. That module only gets (Z, y): it doesn't import the map code,
+and a test checks this.
+
+- **Folds.** Every measure uses the students' 5 outer folds (seed 42) and, where needed, their
+  3 inner folds (seed 0).
+- **L1, learning-curve slope.**
+  - Learners, all at fixed settings: degree-3 polynomial logistic regression, boosted trees and
+    RBF SVM.
+  - Each is refit on 25, 50, 75 and 100% of each outer-train fold. The subsets are nested, and
+    each is repeated 3 times.
+  - **L1 = AUC at 100% − AUC at 50%,** i.e. the gain per doubling, for the learner that is best
+    at 100%. Amendment 1 said "the last step". We use the last *doubling*, 50→100% rather than
+    75→100%, because one extra quarter of the rows is too noisy a step.
+  - Also recorded, as exploratory: a shared-asymptote fit to the train and test curves
+    (Cortes et al. 1994).
+- **L2, stacking gain.**
+  - Six base learners: linear, degree-3 polynomial, additive splines, boosted trees, RBF SVM
+    and 25-NN.
+  - Their inner-fold out-of-fold scores are combined by logistic regression.
+  - **L2 = outer AUC of the stack − outer AUC of the single learner the inner folds rank best.**
+- **L3, nearest-neighbour bound.** From the leave-one-out 1-NN error R, an **accuracy** ceiling
+  of 1 − (1 − √(1 − 2R))/2. Check P4 compares it with the true best *accuracy*, computed from
+  the teacher's probabilities, because the bound is about errors, not AUC.
+- **F1, interaction ladder.**
+  - Rungs: logistic regression on additive splines → plus all pairwise products → plus all
+    three-way products → unrestricted (the better of boosted trees and RBF SVM).
+  - **Order** = the first rung within 0.02 AUC of the best rung, or "none found" if no rung
+    beats 0.5 by 0.03.
+  - *Change from the first version:* the first ladder used boosted trees restricted to one,
+    then two features at a time. On a sanity look at 9 non-AQFM datasets (one seed each, no
+    screen check computed), it called the linear teacher order 2 and the pairwise teacher
+    order 3+. Restricted trees represent sums and products poorly, so the ladder measured the
+    trees, not the labels. With explicit expansions, the same datasets came out as linear 1,
+    pairwise 2, three-way and mixed 3, parity and `NETD` ≥ 4, and noise "none found".
+- **Library.** The measures are computed on all **1152** datasets: the 864 τ-sweep datasets
+  plus the 288 new ones. That replaces the 1116 in Section 4, which predates Amendment 1.
+
 **Added reference:**
 - C. Cortes, L. D. Jackel, S. A. Solla, V. Vapnik, J. S. Denker (1994), Learning curves: asymptotic values and rate of convergence, *NeurIPS 6*.
 - D. H. Wolpert (1992), Stacked generalization, *Neural Networks* 5(2):241–259.

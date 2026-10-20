@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Screen study (docs/screen_plan.md, with Amendments 1 and 2): can cheap tests on (x, y)
+Screen study (docs/screen_plan.md, with Amendments 1-3): can cheap tests on (x, y)
 say "this dataset resists feature engineering, and not just because the labels
 are noisy", and how often does AQFM help on datasets like that?
 
@@ -31,11 +31,16 @@ Phases
   look   quick sanity table per teacher family: true ceiling, positive rate,
          and three fast classical models (no map).  Needs only the inputs, so it
          can run before `run`.
+  measures  the screen measures (L1, L2, L3, F1; experiments/screen_measures.py)
+         on EVERY library dataset: the 864 tau-sweep datasets (labels read from
+         --sweep) and the 288 new ones.  Needs only inputs and labels, so it can run
+         alongside `run`.  -> OUT/measures/<name>.csv, OUT/SCREEN_MEASURES.csv
 
 Usage (from the repo root):
   python experiments/ts_screen.py make --out runs/screen --sweep runs/tau_sweep
   python experiments/ts_screen.py look --out runs/screen
   python experiments/ts_screen.py run  --out runs/screen --workers 32
+  python experiments/ts_screen.py measures --out runs/screen --sweep runs/tau_sweep --workers 32
 Nothing in the tau-sweep folder is ever written.
 """
 
@@ -69,7 +74,7 @@ TEACHERS_FILE = "SCREEN_TEACHERS.csv"
 
 DESIGN = {
     "version": "screen_1",
-    "plan": "docs/screen_plan.md (Amendments 1, 2)",
+    "plan": "docs/screen_plan.md (Amendments 1-3)",
     "n": tt.DESIGN["n"],
     "ps": [4, 6, 8],
     # aqfm_noise block: which tau-sweep teachers get a T = 1.0 copy
@@ -328,9 +333,53 @@ def do_look(out, d=DESIGN):
     print(f"\nwrote {out / 'SCREEN_LOOK.csv'}")
 
 
+def _measure_job(args):
+    """one dataset's screen measures.  Only the inputs and the labels are loaded:
+    screen_measures never sees banks, teacher scores or ceilings."""
+    import screen_measures as SM
+    out, name, p, labels = args
+    f = out / "measures" / f"{name}.csv"
+    if f.exists():
+        return name, "skip"
+    _, Z = tt.inputs(p)
+    y = np.load(labels)
+    t0 = time.time()
+    row = SM.all_measures(Z, y, name)
+    row["seconds"] = time.time() - t0
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_suffix(".tmp.csv")
+    pd.DataFrame([row]).to_csv(tmp, index=False)
+    tmp.replace(f)
+    return name, f"ok {row['seconds']:.0f}s"
+
+
+def library(out, sweep):
+    """every library dataset: (name, p, label file, block)"""
+    T = pd.read_csv(sweep / "TT_TEACHERS.csv")
+    T = T[~T.degenerate.astype(bool)]
+    S = pd.read_csv(out / TEACHERS_FILE)
+    S = S[~S.degenerate.astype(bool)]
+    rows = [(n, int(p), sweep / "labels" / f"{n}.npy", "tau_sweep") for n, p in zip(T.name, T.p)]
+    rows += [(n, int(p), out / "labels" / f"{n}.npy", b) for n, p, b in zip(S.name, S.p, S.block)]
+    return rows
+
+
+def do_measures(out, sweep, workers):
+    L = library(out, sweep)
+    jobs = sorted([(out, n, p, lab) for n, p, lab, _ in L], key=lambda j: (-j[2], j[1]))
+    fails = ad._pool(_measure_job, jobs, workers, "measure")
+    parts = [pd.read_csv(out / "measures" / f"{n}.csv") for n, *_ in L if (out / "measures" / f"{n}.csv").exists()]
+    if parts:
+        M = pd.concat(parts, ignore_index=True)
+        M = M.merge(pd.DataFrame([(n, b) for n, _, _, b in L], columns=["name", "block"]), on="name")
+        M.to_csv(out / "SCREEN_MEASURES.csv", index=False)
+        print(f"wrote {out / 'SCREEN_MEASURES.csv'} ({len(M)} of {len(L)} datasets)")
+    sys.exit(1 if fails else 0)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("phase", choices=["make", "run", "look"])
+    ap.add_argument("phase", choices=["make", "run", "look", "measures"])
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--sweep", type=Path, default=Path("runs/tau_sweep"),
                     help="tau-sweep run folder (banks are read from here)")
@@ -340,6 +389,8 @@ def main():
         do_make(a.out, a.sweep)
     elif a.phase == "run":
         do_run(a.out, a.workers)
+    elif a.phase == "measures":
+        do_measures(a.out, a.sweep, a.workers)
     else:
         do_look(a.out)
 

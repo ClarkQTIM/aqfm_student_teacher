@@ -138,3 +138,55 @@ def test_noise_copy_paired_with_original(tmp_path):
     score = tt._score_from(F, rng.standard_normal(F.shape[1]))
     assert _monotone_pair(score, y_cold, y_hot)
     assert meta["temp"] == 1.0 and abs(meta["ceiling"] - 0.74) < 0.06    # about 0.74 at T = 1
+
+
+# ---------------------------------------------------------------- screen measures
+
+def test_measures_never_see_the_map():
+    """screen_measures may only import general libraries: not the map, not the
+    teacher code, not anything that could load a bank or a teacher score"""
+    import ast
+    src = (Path(__file__).resolve().parents[1] / "experiments" / "screen_measures.py").read_text()
+    mods = set()
+    for node in ast.walk(ast.parse(src)):
+        if isinstance(node, ast.Import):
+            mods |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            mods.add((node.module or "").split(".")[0])
+    assert mods <= {"__future__", "warnings", "itertools", "hashlib", "numpy", "scipy", "sklearn"}, mods
+    import inspect
+    import screen_measures as SM
+    assert list(inspect.signature(SM.all_measures).parameters) == ["Z", "y", "name"]
+
+
+def _foreign(nm):
+    sp = {s["name"]: s for s in SC.foreign_specs()}[nm]
+    y, _, _ = SC.make_foreign(sp)
+    _, Z = tt.inputs(sp["p"])
+    return Z, y
+
+
+@pytest.mark.parametrize("nm,order", [("fr_LIN_p6_s0_T0.25", "1"), ("fr_PAIR_p6_s0_T0.25", "2"),
+                                      ("fr_TRIPLE_p6_s0_T0.25", "3"), ("fr_NOISE_p6_s0_T0.25", "none found")])
+def test_interaction_ladder_on_known_orders(nm, order):
+    import screen_measures as SM
+    Z, y = _foreign(nm)
+    assert SM.measure_F1(Z, y, SM.outer_folds(Z, y))["F1_order"] == order
+
+
+def test_nn_bound_on_noise_and_structure():
+    import screen_measures as SM
+    Z, y = _foreign("fr_NOISE_p6_s0_T0.25")
+    assert SM.measure_L3(Z, y)["L3_ceiling_acc"] < 0.56          # nothing to learn: about 0.5
+    Z, y = _foreign("fr_LIN_p4_s0_T0.25")
+    assert SM.measure_L3(Z, y)["L3_ceiling_acc"] > 0.75
+
+
+def test_measures_deterministic_and_complete():
+    import screen_measures as SM
+    Z, y = _foreign("fr_NETD_p4_s0_T0.25")
+    a = SM.all_measures(Z, y, "x")
+    b = SM.all_measures(Z, y, "x")
+    assert a == b or all((a[k] == b[k]) or (a[k] != a[k] and b[k] != b[k]) for k in a)   # NaN-safe
+    for k in ("L1_slope", "L1_asymptote", "L2_gain", "L3_ceiling_acc", "F1_order"):
+        assert k in a
