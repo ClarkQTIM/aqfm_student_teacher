@@ -201,7 +201,95 @@ The measures take minutes to hours.
    building.
 3. Real data: the feature-to-qubit rule, and the pilot size.
 
-**Amendments:** none yet.
+**Amendments:**
+
+### A1 (2026-10-20, before any screen runs): non-AQFM teachers, and a screen for "resistant, not noisy"
+
+**Why.**
+- Every teacher in the library so far is some version of the map. Real biomedical data are
+  not, and we aren't going in assuming "there's physics in here."
+- The realistic pitch is: *this dataset resists traditional feature engineering, and not
+  because the labels are noisy, so it's worth trying the AQFM family.*
+- A flag has always meant "worth trying", not "needs quantum" (Sections 1 and 7). This amendment
+  makes the screen test exactly that, and adds labels made without the map, so we can ask how
+  often AQFM actually helps on resistant data it didn't make.
+
+**1. New block of non-AQFM teachers.**
+- **Inputs:** the same shared inputs as before, one X per p (standardized, clipped at ±3). The
+  students' map features depend only on X, so they are already simulated and no new
+  simulations are needed.
+- **Labels:** each teacher defines a score s(z) from the standardized inputs. The score is
+  standardized, then y ~ Bernoulli(σ(s/T)), exactly as for the AQFM teachers.
+- **Seeds:** weights and subsets come from a seed derived from the dataset name.
+- The interaction-order axis is borrowed from the earlier Phase 1 archetypes. Their second axis,
+  alignment with the coupling graph, doesn't apply here, since the coupling is all-to-all and
+  uniform.
+
+| Name | Score s(z) | What it stands for |
+|---|---|---|
+| `LIN` | w·z, w ~ N(0, I) | control: easy for everything |
+| `PAIR` | Σ a·zᵢzⱼ over p random pairs, a ~ N(0,1) | two-way interactions |
+| `TRIPLE` | Σ a·zᵢzⱼzₖ over p random triples | three-way interactions |
+| `MIXED` | LIN + PAIR + TRIPLE parts, each scaled to equal variance | mixed orders |
+| `PAR3` | Π tanh(2zᵢ) over 3 random inputs | parity-like, three inputs |
+| `PARp` | Π tanh(2zᵢ) over all p inputs | parity-like, all inputs jointly |
+| `NET1` | v·tanh(Wz + b), width 16, W ~ N(0, 1/p), b, v ~ N(0,1) | small random neural net, smooth |
+| `NET3` | as NET1, W ~ N(0, 9/p) | small random neural net, sharp |
+| `NOISE` | s ~ N(0,1), independent of z | nothing to learn |
+
+- **Size:** 9 teachers × p ∈ {4, 6, 8} × 3 seeds × T ∈ {0.25, 1.0}, giving **162 datasets**.
+  The T = 1.0 copies are paired with the T = 0.25 ones in the same way as Section 4.
+- **True ceiling:** AUC(y, s). For `NOISE` the true ceiling is 0.5, because s doesn't depend on z.
+- None of the students has the teacher's own features. This is the realistic case: there is no
+  "open-book" student.
+
+**2. Noise copies of the AQFM teachers.** Keep T = 1.0 and **drop T = 0.5**, which settles open
+decision 1. Two levels are enough for a paired noisy-or-not comparison and save 126 student runs.
+The AQFM noise block is now 126 datasets. With the new block, that's **288 new datasets**, about
+a third of the τ sweep.
+
+**3. Two separate truths.** Each library dataset gets two yes/no labels, used only for
+evaluation:
+- **Resistant:** (true ceiling) − (best cheap AUC, B2) ≥ 0.05. The screen is meant to detect this.
+- **AQFM helps:** margin ≥ 0.05, as in Section 2. The screen doesn't predict this directly. We
+  measure how often it's true *among resistant datasets*.
+
+**4. Revised measures.**
+
+| | Measure | Role |
+|---|---|---|
+| L1 | Learning-curve slope: best classical student refit on 25/50/75/100% of each outer-train fold; slope over the last step. Plus the Cortes et al. (1994) asymptote estimate | screen |
+| L2 | Stacking gain: out-of-fold combination of the classical and nonlinear learners vs the best single one (Wolpert 1992) | screen |
+| L3 | Nearest-neighbour bound (Cover & Hart 1967) | baseline only |
+| F1 | Interaction ladder (A3 above) | describes *what kind* of resistance; not part of the flag |
+
+The physics-motivated fingerprints discussed in conversation (dependence on the mean input; the
+coupling the mean-field student picks) are **not** used. The mean-field student's choice is still
+recorded as part of the pilot ladder.
+
+**5. Revised screen.** It replaces the "estimated ceiling − best cheap ≥ 0.05" rule in Section 6.
+- **Screen score:** the average of the percentile ranks of L1 and L2. Nothing is fitted.
+- **Flag thresholds** are chosen on two p values and tested on the third, as in Section 6.
+- **The pilot is a ladder:** J=0, then mean-field, then exact. The exact map, and hardware, is
+  only justified where it beats mean-field.
+
+**6. Checks added or changed.** The P-numbers in Section 6 stay. Where they relied on the old
+rule, they now use the screen score.
+
+| Check | What | Pass if | Prediction |
+|---|---|---|---|
+| **P3′** (replaces P3) | Screen score vs the *resistant* truth, both noise levels, both teacher blocks | AUROC ≥ 0.75 | Uncertain. The main screen question |
+| **P9** | Flag rate on `NOISE` and on `LIN` | ≤ 10% each | Pass |
+| **P10** | Among resistant non-AQFM datasets: fraction where AQFM helps | — (reported, per teacher) | Rare: ≤ 10% overall. Any teacher where it's common is the headline |
+| **P11** | Among resistant AQFM-made datasets: same fraction | — (reported) | Much higher than P10. If not, the window isn't driven by resistance alone |
+| **P12** | F1 assigns the right interaction order to `LIN`, `PAIR`, `TRIPLE`, `PARp` | correct order on ≥ 75% | Pass. A sanity check of F1 itself, since we know the true order |
+
+**The grant question** is P10 set beside P11. How often does AQFM help on resistant data it
+didn't generate, compared with data it did?
+
+**Added reference:**
+- C. Cortes, L. D. Jackel, S. A. Solla, V. Vapnik, J. S. Denker (1994), Learning curves: asymptotic values and rate of convergence, *NeurIPS 6*.
+- D. H. Wolpert (1992), Stacked generalization, *Neural Networks* 5(2):241–259.
 
 ## References (to double-check before any write-up)
 
