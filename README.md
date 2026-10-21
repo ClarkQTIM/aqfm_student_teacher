@@ -33,6 +33,7 @@ docs/aqfm_overview.tex   the write-up
 docs/screen_plan.md      plan for the screen study (checks fixed before running)
 docs/screen.md           short readable summary of the screen study's results
 docs/realdata_plan.md    plan for the real-data study (checks fixed before any real data are modelled)
+docs/realdata_results.md results of the real-data study (5 ophthalmic datasets)
 runs/                    results of record (NOT in git; large)
   tau_sweep/             main run + add-ons  -> Sections 2-5
   teacher_student_v2/    earlier 216-dataset run (cited for counts only)
@@ -89,6 +90,5 @@ It prints the Python and library versions used; save its output next to the run
 
 - Sections 1-5 of the overview: complete, reproducible from `runs/tau_sweep`.
 - Scaling run (`ts_scaling.py`, p = 4-12, 625 datasets): built and tested, not yet run.
-- Real-data study: plan in `docs/realdata_plan.md`; runner built and tested end to end on a synthetic stand-in;
-  adapters ready for DR Debrecen and myopia, the others once their files are downloaded.
+- Real-data study: run on 5 datasets (2026-10-21); results in `docs/realdata_results.md`.
 - Screen study: plan in `docs/screen_plan.md`; teachers, runner, measures and scoring built (`ts_screen.py make/look/run/measures/evaluate`); C measures (P6, P7) not yet.
