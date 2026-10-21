@@ -29,6 +29,7 @@ tools/
 tests/                   unit tests (pytest), incl. a check of the simulator against the original runner
 docs/aqfm_overview.tex   the write-up
 docs/screen_plan.md      plan for the screen study (checks fixed before running)
+docs/screen.md           short readable summary of the screen study's results
 runs/                    results of record (NOT in git; large)
   tau_sweep/             main run + add-ons  -> Sections 2-5
   teacher_student_v2/    earlier 216-dataset run (cited for counts only)
