@@ -129,6 +129,108 @@ def load_myopia(root=None):
                             "dropped": ["id", "studyyear (administrative)"]})
 
 
+def _excel(path, sheet=0):
+    try:
+        return pd.read_excel(path, sheet_name=sheet, header=None)
+    except ImportError as e:                                   # openpyxl missing
+        raise NotReady(f"reading {path} needs openpyxl: PIP_NO_CACHE_DIR=1 pip install openpyxl ({e})")
+
+
+def _check(cond, msg):
+    if not cond:
+        raise NotReady(msg)
+
+
+PAPILA_COLS = ["id", "age", "gender", "diagnosis", "dioptre_1", "dioptre_2", "astigmatism", "phakic",
+               "iop_pneumatic", "iop_perkins", "pachymetry", "axial_length", "vf_md"]
+PAPILA_COUNTS = {0: 333, 1: 87, 2: 68}        # healthy, glaucoma, suspect (eyes; Kovalyk et al. 2022)
+GRAPE_EYES, GRAPE_PLR2 = 263, 40              # Huang et al. 2023
+
+
+def load_papila(root=None):
+    """PAPILA (figshare 14798004): patient_data_od.xlsx + patient_data_os.xlsx, one row per
+    patient per file.  Layout: row 0 = headers, row 1 = sub-headers (dioptre_1, dioptre_2,
+    astigmatism; IOP Pneumatic / Perkins), row 2 = the word 'ID', data from row 3.
+    Label (plan Section 3): glaucoma (1) vs healthy (0); suspects dropped.
+    Dropped: VF_MD (recorded only for glaucoma patients: leaks the label), ID, eye side."""
+    d = _root(root) / "papila"
+    parts = []
+    for eye in ("od", "os"):
+        f = _need(d / f"patient_data_{eye}.xlsx", "download the clinical-data files from the PAPILA figshare")
+        R = _excel(f)
+        _check(R.shape[1] == 13 and str(R.iloc[0, 1]).strip() == "Age" and str(R.iloc[1, 4]).strip() == "dioptre_1",
+               f"{f}: layout differs from the one this adapter was written for (shape {R.shape})")
+        D = R.iloc[3:].copy()
+        D.columns = PAPILA_COLS
+        D = D[D.id.notna()]
+        D["eye"] = eye
+        parts.append(D)
+    D = pd.concat(parts, ignore_index=True)
+    for c in PAPILA_COLS[1:]:
+        D[c] = pd.to_numeric(D[c], errors="coerce")
+    counts = D.diagnosis.value_counts().to_dict()
+    _check({int(k): v for k, v in counts.items()} == PAPILA_COUNTS,
+           f"PAPILA diagnosis counts {counts} differ from the paper's {PAPILA_COUNTS}: check the coding")
+    D = D[D.diagnosis.isin([0, 1])]                            # suspects (2) dropped
+    y = (D.diagnosis == 1).astype(int).to_numpy()
+    groups = D.id.astype(str).str.strip().to_numpy()
+    X = D.drop(columns=["id", "diagnosis", "vf_md", "eye"]).reset_index(drop=True)
+    return Raw(X, y, groups, {"source": str(d), "label": "glaucoma (1) vs healthy (0); suspects dropped",
+                              "dropped": ["vf_md (leaks the label)", "id", "eye side", "suspect eyes"]})
+
+
+def load_grape(root=None):
+    """GRAPE (figshare collection 6406319): 'VF and clinical information.xlsx', sheet
+    Baseline.  Layout: row 0 = headers, row 1 = sub-headers (PLR2 / PLR3 / MD under
+    'Progression Status'; Mean / S / N / I / T under 'OCT RNFL thickness'; 0..60 under
+    'VF'), data from row 2.  Label (plan): progression by PLR2.  Dropped: PLR3 and MD-slope
+    labels, Total Visits (a follow-up quantity, not known at baseline), image references.
+    VF points coded -1 (not tested) become missing."""
+    d = _root(root) / "grape"
+    f = _need(d / "VF and clinical information.xlsx", "download 'GRAPE dataset: VF and clinical information.xlsx'")
+    R = _excel(f, "Baseline")
+    sub = R.iloc[1]
+    _check(R.shape[1] == 80 and str(sub.iloc[7]).strip() == "PLR2" and str(sub.iloc[11]).strip() == "Mean"
+           and str(sub.iloc[19]).strip() in ("0", "0.0"),
+           f"{f}: layout differs from the one this adapter was written for (shape {R.shape})")
+    D = R.iloc[2:].reset_index(drop=True)
+    D = D[D.iloc[:, 1].notna()]                                  # a row per eye (laterality given)
+    subject = D.iloc[:, 0].ffill()                               # in case of merged cells
+    X = pd.DataFrame({"age": D.iloc[:, 2], "gender": D.iloc[:, 3], "iop": D.iloc[:, 4], "cct": D.iloc[:, 5],
+                      "glaucoma_category": D.iloc[:, 10]})
+    for i, nm in enumerate(["rnfl_mean", "rnfl_s", "rnfl_n", "rnfl_i", "rnfl_t"]):
+        X[nm] = D.iloc[:, 11 + i]
+    for k in range(61):
+        X[f"vf_{k}"] = pd.to_numeric(D.iloc[:, 19 + k], errors="coerce").replace(-1, np.nan)
+    for c in ("age", "iop", "cct", "rnfl_mean", "rnfl_s", "rnfl_n", "rnfl_i", "rnfl_t"):
+        X[c] = pd.to_numeric(X[c], errors="coerce")
+    y = pd.to_numeric(D.iloc[:, 7], errors="coerce")
+    _check(len(X) == GRAPE_EYES and y.notna().all() and int(y.sum()) == GRAPE_PLR2,
+           f"GRAPE: expected {GRAPE_EYES} eyes with {GRAPE_PLR2} PLR2-progressing, found {len(X)} eyes, {y.sum()} positive")
+    return Raw(X.reset_index(drop=True), y.astype(int).to_numpy(), subject.astype(str).to_numpy(),
+               {"source": str(f), "label": "progression by PLR2 (baseline features only)",
+                "dropped": ["PLR3, MD-slope labels", "Total Visits (follow-up quantity)", "laterality",
+                            "image references"], "note": "VF value -1 (not tested) -> missing"})
+
+
+def load_fives_vascx(root=None):
+    """FIVES fundus images with VascX vessel biomarkers: fives_vascx_dataset.csv, one row
+    per image.  Label (plan): any disease (AMD, DR, glaucoma) vs normal.  The FIVES split
+    column is ignored (we make our own).  No patient ids in the file: each image is
+    treated as its own patient (caveat recorded)."""
+    d = _root(root) / "fives_vascx"
+    f = _need(d / "fives_vascx_dataset.csv", "copy fives_vascx_dataset.csv from the other project")
+    D = pd.read_csv(f)
+    codes = set(D.disease_code.astype(str).str.strip())
+    _check(codes <= {"A", "D", "G", "N"}, f"FIVES: unexpected disease codes {sorted(codes)}")
+    y = (D.disease_code.astype(str).str.strip() != "N").astype(int).to_numpy()
+    X = D.drop(columns=["vascx_id", "image_id", "disease_code", "disease", "split"])
+    return Raw(X, y, None, {"source": str(f), "label": "disease (AMD/DR/glaucoma) vs normal",
+                            "dropped": ["ids", "disease labels", "FIVES split"],
+                            "counts": D.disease.value_counts().to_dict(),
+                            "caveat": "no patient ids: images treated as independent"})
+
+
 def _todo(name, what):
     def f(root=None):
         root = _root(root)
@@ -142,11 +244,11 @@ def _todo(name, what):
 ADAPTERS = {
     "dr_debrecen": load_dr_debrecen,
     "myopia": load_myopia,
-    "papila": _todo("papila", "needs the clinical-data columns; drop mean defect, glaucoma vs healthy, group = patient"),
-    "grape": _todo("grape", "needs the baseline-sheet columns; label PLR2, drop other labels/follow-ups, group = patient"),
+    "papila": load_papila,
+    "grape": load_grape,
     "keratoconus": _todo("keratoconus", "needs the file's columns and class coding"),
     "perg_ioba": _todo("perg_ioba", "needs P50/N95 features from the signals, first visit per subject"),
-    "fives_vascx": _todo("fives_vascx", "needs the file and its label column"),
+    "fives_vascx": load_fives_vascx,
 }
 
 

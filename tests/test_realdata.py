@@ -115,7 +115,9 @@ def test_arff_reader(tmp_path):
 
 
 def test_not_ready_is_clear(tmp_path):
-    with pytest.raises(RD.NotReady, match="adapter for papila not finished"):
+    with pytest.raises(RD.NotReady, match="adapter for keratoconus not finished"):
+        RD.load("keratoconus", root=tmp_path)
+    with pytest.raises(RD.NotReady, match="missing .*patient_data_od.xlsx"):
         RD.load("papila", root=tmp_path)
 
 
@@ -157,3 +159,66 @@ def test_run_dataset_grouped_smoke():
     R2, _ = ts.run_dataset(Z, y, {"name": "t"}, S=S, C=C, groups=g)
     assert set(R1.arm) == set(R2.arm) == {"S_Q", "S_MF", "classical_best"}
     assert R1.auc.notna().all() and R2.auc.notna().all()
+
+
+# ---------------------------------------------------------------- adapters on stand-ins in the real files' layouts
+
+def _papila_sheet(path, rows):
+    top = [None, "Age", "Gender", "Diagnosis", "Refractive_Defect", None, None, "Phakic/Pseudophakic", "IOP", None,
+           "Pachymetry", "Axial_Length", "VF_MD"]
+    sub = [None, "Age", "Gender", "Diagnosis", "dioptre_1", "dioptre_2", "astigmatism", "Phakic/Pseudophakic",
+           "Pneumatic", "Perkins", "Pachymetry", "Axial_Length", "VF_MD"]
+    idr = ["ID"] + [None] * 12
+    pd.DataFrame([top, sub, idr] + rows).to_excel(path, header=False, index=False)
+
+
+def test_papila_adapter(tmp_path, monkeypatch):
+    d = tmp_path / "papila"
+    d.mkdir()
+    od = [["#001", 50, 0, 0, 0.5, -1, 90, 0, 18, None, 550, 23.5, None],
+          ["#002", 60, 1, 1, 1.0, -0.5, 80, 0, 25, None, 530, 24.0, -5.2],
+          ["#003", 55, 0, 2, 0.0, -0.25, 10, 1, 21, None, 560, 23.0, None]]
+    os_ = [["#001", 50, 0, 0, 0.25, -1, 95, 0, 17, None, 552, 23.4, None],
+           ["#002", 60, 1, 0, 0.75, -0.5, 85, 0, 19, None, 535, 23.9, None],
+           ["#003", 55, 0, 1, 0.0, -0.25, 15, 1, 28, None, 558, 23.1, -3.0]]
+    _papila_sheet(d / "patient_data_od.xlsx", od)
+    _papila_sheet(d / "patient_data_os.xlsx", os_)
+    monkeypatch.setattr(RD, "PAPILA_COUNTS", {0: 3, 1: 2, 2: 1})
+    r = RD.load_papila(root=tmp_path)
+    assert len(r.y) == 5 and r.y.sum() == 2                     # suspect eye dropped
+    assert "vf_md" not in r.X and "id" not in r.X and "diagnosis" not in r.X
+    assert sorted(set(r.groups)) == ["#001", "#002", "#003"]
+    monkeypatch.setattr(RD, "PAPILA_COUNTS", {0: 333, 1: 87, 2: 68})
+    with pytest.raises(RD.NotReady, match="differ from the paper"):
+        RD.load_papila(root=tmp_path)
+
+
+def test_grape_adapter(tmp_path, monkeypatch):
+    d = tmp_path / "grape"
+    d.mkdir()
+    top = ["Subject Number", "Laterality", "Age", "Gender", "IOP", "CCT", "Total Visits", "Progression Status", None, None,
+           "Category of Glaucoma", "OCT RNFL thickness", None, None, None, None, "Corresponding CFP", "Acquisition Device",
+           "Resolusion", "VF"] + [None] * 60
+    sub = [None] * 7 + ["PLR2", "PLR3", "MD", None, "Mean", "S", "N", "I", "T", None, None, None] + list(range(61))
+    rows = []
+    for subj, eye, prog in ((1, "OD", 1), (None, "OS", 0), (2, "OD", 0)):
+        rows.append([subj, eye, 60, "M", 18, 540, 5, prog, 0, 0, "OAG", 90, 110, 70, 115, 60, "x.jpg", "dev", "res"]
+                    + [-1] + [20] * 60)
+    with pd.ExcelWriter(d / "VF and clinical information.xlsx") as w:
+        pd.DataFrame([top, sub] + rows).to_excel(w, sheet_name="Baseline", header=False, index=False)
+    monkeypatch.setattr(RD, "GRAPE_EYES", 3)
+    monkeypatch.setattr(RD, "GRAPE_PLR2", 1)
+    r = RD.load_grape(root=tmp_path)
+    assert r.y.tolist() == [1, 0, 0] and list(r.groups) == ["1", "1", "2"]       # merged cell forward-filled
+    assert "vf_60" in r.X and r.X.vf_0.isna().all()                               # -1 -> missing
+    assert not {"Total Visits", "PLR3", "MD"} & set(r.X.columns)
+
+
+def test_fives_adapter(tmp_path):
+    d = tmp_path / "fives_vascx"
+    d.mkdir()
+    pd.DataFrame({"vascx_id": ["a", "b", "c"], "image_id": ["1_N", "2_D", "3_A"], "disease_code": ["N", "D", "A"],
+                  "disease": ["Normal", "DR", "AMD"], "split": ["train", "test", "train"],
+                  "cre_veins": [15.0, 16.0, np.nan], "sparsity": [0.1, 0.2, 0.3]}).to_csv(d / "fives_vascx_dataset.csv", index=False)
+    r = RD.load_fives_vascx(root=tmp_path)
+    assert r.y.tolist() == [0, 1, 1] and list(r.X.columns) == ["cre_veins", "sparsity"] and r.groups is None

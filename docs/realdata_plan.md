@@ -179,4 +179,29 @@ compactness the map does or doesn't offer. That's useful precisely because it's 
 
 ## 10. Amendments
 
-None yet.
+### Amendment 1 (2026-10-21, after seeing the files' columns, before anything is modelled)
+
+These were settled from the column headers alone. No dataset had been prepared or run.
+
+- **PAPILA**
+  - The two files, `patient_data_od.xlsx` and `patient_data_os.xlsx`, are stacked: one row per
+    eye, grouped by patient ID.
+  - Diagnosis coding is 0 = healthy, 1 = glaucoma, 2 = suspect. The adapter **checks** this
+    against the paper's counts (333 / 87 / 68 eyes) and stops if they differ.
+  - Also dropped: **eye side** (OD/OS), which is administrative.
+  - The second IOP column (Perkins) is mostly empty, so the 20%-missing rule will drop it.
+- **GRAPE**
+  - Baseline sheet only.
+  - Also dropped: **Total Visits**. It's a follow-up quantity, not known at baseline, and eyes
+    with more visits have more chances to be called progressing.
+  - **Kept:** glaucoma category (open- vs angle-closure), which is known at baseline.
+  - Visual-field points coded −1 ("not tested") become **missing**, so the 20%-missing rule
+    applies to them.
+  - Subject numbers are forward-filled, in case the file uses merged cells.
+  - The adapter **checks** for 263 eyes with 40 progressing by PLR2.
+- **FIVES / VascX:** `fives_vascx_dataset.csv`.
+  - Label: AMD, DR or glaucoma (codes A/D/G) vs normal (N).
+  - The file's own train/test column is ignored, since we make our own split.
+  - **Caveat:** the file has no patient IDs, so each image is treated as its own patient. If
+    one patient has several images, the confirmation half isn't fully independent. This is
+    reported alongside the result.
