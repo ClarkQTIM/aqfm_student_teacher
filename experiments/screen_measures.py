@@ -276,11 +276,13 @@ def measure_F1(Z, y, folds):
 
 # ---------------------------------------------------------------------------
 
-def all_measures(Z, y, name):
-    """every screen measure for one dataset: inputs Z, labels y, a name (for seeds)"""
+def all_measures(Z, y, name, folds=None):
+    """every screen measure for one dataset: inputs Z, labels y, a name (for seeds).
+    folds: optional outer folds (real data grouped by patient); default = the
+    students' StratifiedKFold.  L2's inner folds stay ungrouped (descriptive only)."""
     Z = np.asarray(Z, float)
     y = np.asarray(y).astype(int)
-    folds = outer_folds(Z, y)
+    folds = outer_folds(Z, y) if folds is None else folds
     out = {"name": name}
     out.update(measure_L1(Z, y, name, folds))
     out.update(measure_L2(Z, y, name, folds))

@@ -65,7 +65,7 @@ from scipy.stats import spearmanr
 from sklearn.kernel_approximation import RBFSampler
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import roc_auc_score
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedGroupKFold, StratifiedKFold
 from sklearn.preprocessing import PolynomialFeatures, SplineTransformer, StandardScaler
 
 from aqfm_prescreen.aqfm import AQFM_FAMILIES, compute_bank, family_matrix, slices_for_p
@@ -267,19 +267,29 @@ def _outer(Ftr, Fte, ytr, yte, C):
     return float(lr_path(Ftr, Fte, ytr, yte)[Cs.index(C)])
 
 
-def run_dataset(X, y, meta, d=DESIGN, S=None, C=None):
+def run_dataset(X, y, meta, d=DESIGN, S=None, C=None, groups=None):
     """S, C: precomputed student / curve sets (the tau sweep shares them across
-    datasets with the same inputs); computed here when not given."""
+    datasets with the same inputs); computed here when not given.
+    groups: optional patient ids (real data with two eyes per patient).  When given,
+    outer AND inner folds keep each group in one fold (StratifiedGroupKFold); when
+    None (all synthetic runs) the folds are exactly the original StratifiedKFold."""
     Z = _global_z(X)
     p = Z.shape[1]
     S = student_sets(Z, d) if S is None else S
     C = curve_sets(Z, d) if C is None else C
     Cs = sorted(d["C_grid"])
-    outer = list(StratifiedKFold(d["outer"], shuffle=True, random_state=d["cv_seed"]).split(Z, y))
+    if groups is None:
+        outer = list(StratifiedKFold(d["outer"], shuffle=True, random_state=d["cv_seed"]).split(Z, y))
+    else:
+        groups = np.asarray(groups)
+        outer = list(StratifiedGroupKFold(d["outer"], shuffle=True, random_state=d["cv_seed"]).split(Z, y, groups))
     rows, crows = [], []
     for f, (tr, te) in enumerate(outer):
         ytr, yte = y[tr], y[te]
-        inner = list(StratifiedKFold(d["inner"], shuffle=True, random_state=0).split(tr, ytr))
+        if groups is None:
+            inner = list(StratifiedKFold(d["inner"], shuffle=True, random_state=0).split(tr, ytr))
+        else:
+            inner = list(StratifiedGroupKFold(d["inner"], shuffle=True, random_state=0).split(tr, ytr, groups[tr]))
         # AQFM students: joint inner-CV choice of (observables, J, tau, C)
         for arm, sets in S.items():
             paths = {k: _cv_path([(F[tr][a], F[tr][b]) for a, b in inner], ytr, inner)

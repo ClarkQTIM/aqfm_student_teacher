@@ -23,6 +23,8 @@ experiments/
   ts_screen.py           screen study: non-AQFM teachers + noisier copies, students on them (docs/screen_plan.md)
   screen_measures.py     the screen measures (L1 learning curve, L2 stacking, L3 nearest-neighbour, F1 ladder); sees only (x, y)
   screen_evaluate.py     scores the screen checks P1-P12 (docs/screen_plan.md)
+  realdata.py            the ladder + feature count on real tabular datasets (docs/realdata_plan.md)
+  real_datasets.py       adapters for the real datasets (raw files in data/ophtho/<name>/, never in git)
 tools/
   overview_numbers.py    recomputes every number in the overview and checks it against the document
   verify_reproduction.py regenerates simulations, labels and score tables and compares them to the saved run
@@ -30,6 +32,7 @@ tests/                   unit tests (pytest), incl. a check of the simulator aga
 docs/aqfm_overview.tex   the write-up
 docs/screen_plan.md      plan for the screen study (checks fixed before running)
 docs/screen.md           short readable summary of the screen study's results
+docs/realdata_plan.md    plan for the real-data study (checks fixed before any real data are modelled)
 runs/                    results of record (NOT in git; large)
   tau_sweep/             main run + add-ons  -> Sections 2-5
   teacher_student_v2/    earlier 216-dataset run (cited for counts only)
@@ -86,4 +89,6 @@ It prints the Python and library versions used; save its output next to the run
 
 - Sections 1-5 of the overview: complete, reproducible from `runs/tau_sweep`.
 - Scaling run (`ts_scaling.py`, p = 4-12, 625 datasets): built and tested, not yet run.
+- Real-data study: plan in `docs/realdata_plan.md`; runner built and tested end to end on a synthetic stand-in;
+  adapters ready for DR Debrecen and myopia, the others once their files are downloaded.
 - Screen study: plan in `docs/screen_plan.md`; teachers, runner, measures and scoring built (`ts_screen.py make/look/run/measures/evaluate`); C measures (P6, P7) not yet.

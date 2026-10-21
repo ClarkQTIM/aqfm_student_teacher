@@ -156,7 +156,7 @@ def test_measures_never_see_the_map():
     assert mods <= {"__future__", "warnings", "itertools", "hashlib", "numpy", "scipy", "sklearn"}, mods
     import inspect
     import screen_measures as SM
-    assert list(inspect.signature(SM.all_measures).parameters) == ["Z", "y", "name"]
+    assert list(inspect.signature(SM.all_measures).parameters) == ["Z", "y", "name", "folds"]
 
 
 def _foreign(nm):
