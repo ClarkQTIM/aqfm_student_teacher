@@ -344,6 +344,50 @@ and a test checks this.
 - **Library.** The measures are computed on all **1152** datasets: the 864 τ-sweep datasets
   plus the 288 new ones. That replaces the 1116 in Section 4, which predates Amendment 1.
 
+### Amendment 4 (2026-10-20, while the students run, before any check is scored): how the checks are computed
+
+The code is `experiments/screen_evaluate.py`. It's committed before any student result for the
+new datasets exists.
+
+**Quantities:**
+- **Best cheap** = max AUC over the classical students, nonlinear learners, mean-field, J=0 and
+  ground-state students.
+- **Margin** = AUC(exact student) − best cheap, the overview's `margin_new`. The code
+  cross-checks this against `ADDONS_DATASETS.csv`.
+- **Resistant:** ceiling − best cheap ≥ 0.05.
+- **AQFM helps:** margin ≥ 0.05.
+- **A1** = max(classical students, nonlinear learners).
+- **Screen score** = mean of the percentile ranks of L1 and L2 over the whole library.
+
+**Flags:** screen score ≥ a threshold chosen on the other two p values, by maximising
+TPR − FPR for "resistant". A test checks that a dataset's flag never depends on its own p's
+truth.
+
+**Intervals:** 95% bootstrap intervals. One resampling unit is a teacher together with its
+noisier copy, 1000 resamples.
+
+**How each check is read:**
+- **P1:** AUROC of "low A1" for "AQFM helps" on the τ sweep, and for exact vs mean-field inside
+  the window.
+- **P2:** AUROC of (true ceiling − best cheap) for "AQFM helps", all 1152 datasets.
+- **P3′:** AUROC of the screen score for "resistant", all datasets. Also reported per p, per
+  block, and for L1, L2 and the asymptote separately.
+- **P4:** median |asymptote − true ceiling|, and median |L3 bound − true best accuracy|. The true
+  best accuracy is mean(max(q, 1 − q)), with q the teacher's probability, recomputed from its
+  seed.
+- **P5:** exact vs mean-field teachers in the window (local readout, c ≥ 2, 3 ≤ τ ≤ 20), at each
+  noise level. "Data alone" = low A1. "With stand-ins" = small (best stand-in − A1); the
+  mean-field student solves mean-field labels, so its gain over A1 is large for them.
+- **P6 and P7** need the exact-map C measures, which aren't built yet. They're reported as not
+  computed.
+- **P8:** share where AQFM helps, on the 126 paired teachers, at T = 0.25 and at T = 1.
+- **P9:** flag rate on `NOISE` and on `LIN`, over the held-out flags.
+- **P10 and P11:** share where AQFM helps among resistant datasets, non-AQFM vs AQFM-made, with
+  intervals. Also reported among *flagged* datasets, which is the practical version of the
+  grant question.
+- **P12:** share of `LIN`/`PAIR`/`TRIPLE`/`PARp` datasets (both noise levels) where F1's order is
+  1/2/3/≥4.
+
 **Added reference:**
 - C. Cortes, L. D. Jackel, S. A. Solla, V. Vapnik, J. S. Denker (1994), Learning curves: asymptotic values and rate of convergence, *NeurIPS 6*.
 - D. H. Wolpert (1992), Stacked generalization, *Neural Networks* 5(2):241–259.

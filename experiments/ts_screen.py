@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Screen study (docs/screen_plan.md, with Amendments 1-3): can cheap tests on (x, y)
+Screen study (docs/screen_plan.md, with Amendments 1-4): can cheap tests on (x, y)
 say "this dataset resists feature engineering, and not just because the labels
 are noisy", and how often does AQFM help on datasets like that?
 
@@ -35,12 +35,16 @@ Phases
          on EVERY library dataset: the 864 tau-sweep datasets (labels read from
          --sweep) and the 288 new ones.  Needs only inputs and labels, so it can run
          alongside `run`.  -> OUT/measures/<name>.csv, OUT/SCREEN_MEASURES.csv
+  evaluate  checks P1-P12 (experiments/screen_evaluate.py) from everything that has
+         finished so far; safe to run on a partial run.
+         -> OUT/SCREEN_DATASETS.csv, OUT/SCREEN_RESULTS.csv
 
 Usage (from the repo root):
   python experiments/ts_screen.py make --out runs/screen --sweep runs/tau_sweep
   python experiments/ts_screen.py look --out runs/screen
   python experiments/ts_screen.py run  --out runs/screen --workers 32
   python experiments/ts_screen.py measures --out runs/screen --sweep runs/tau_sweep --workers 32
+  python experiments/ts_screen.py evaluate --out runs/screen --sweep runs/tau_sweep
 Nothing in the tau-sweep folder is ever written.
 """
 
@@ -74,7 +78,7 @@ TEACHERS_FILE = "SCREEN_TEACHERS.csv"
 
 DESIGN = {
     "version": "screen_1",
-    "plan": "docs/screen_plan.md (Amendments 1-3)",
+    "plan": "docs/screen_plan.md (Amendments 1-4)",
     "n": tt.DESIGN["n"],
     "ps": [4, 6, 8],
     # aqfm_noise block: which tau-sweep teachers get a T = 1.0 copy
@@ -377,9 +381,24 @@ def do_measures(out, sweep, workers):
     sys.exit(1 if fails else 0)
 
 
+def do_evaluate(out, sweep):
+    import screen_evaluate as SE
+    D = SE.assemble(out, sweep)
+    n_st = int(D.auc_S_Q.notna().sum()) if "auc_S_Q" in D else 0
+    n_nl = int(D.auc_nonlinear_best.notna().sum()) if "auc_nonlinear_best" in D else 0
+    n_me = int(D.L1_slope.notna().sum()) if "L1_slope" in D else 0
+    print(f"{len(D)} datasets: students done {n_st}, nonlinear done {n_nl}, measures done {n_me}")
+    R, D = SE.checks(D)
+    D.to_csv(out / "SCREEN_DATASETS.csv", index=False)
+    R.to_csv(out / "SCREEN_RESULTS.csv", index=False)
+    print()
+    SE.report(R)
+    print(f"\nwrote {out / 'SCREEN_DATASETS.csv'} and {out / 'SCREEN_RESULTS.csv'}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("phase", choices=["make", "run", "look", "measures"])
+    ap.add_argument("phase", choices=["make", "run", "look", "measures", "evaluate"])
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--sweep", type=Path, default=Path("runs/tau_sweep"),
                     help="tau-sweep run folder (banks are read from here)")
@@ -391,6 +410,8 @@ def main():
         do_run(a.out, a.workers)
     elif a.phase == "measures":
         do_measures(a.out, a.sweep, a.workers)
+    elif a.phase == "evaluate":
+        do_evaluate(a.out, a.sweep)
     else:
         do_look(a.out)
 

@@ -190,3 +190,59 @@ def test_measures_deterministic_and_complete():
     assert a == b or all((a[k] == b[k]) or (a[k] != a[k] and b[k] != b[k]) for k in a)   # NaN-safe
     for k in ("L1_slope", "L1_asymptote", "L2_gain", "L3_ceiling_acc", "F1_order"):
         assert k in a
+
+
+# ---------------------------------------------------------------- evaluation (pure part)
+
+def _fake_library(n=240, seed=0):
+    """a synthetic per-dataset table where the screen works by construction"""
+    import pandas as pd
+    import screen_evaluate as SE
+    rng = np.random.default_rng(seed)
+    blocks = np.array(["tau_sweep", "aqfm_noise", "foreign"])[rng.integers(0, 3, n)]
+    D = pd.DataFrame(dict(name=[f"d{i}" for i in range(n)], base=[f"b{i // 2}" for i in range(n)],
+                          block=blocks, p=rng.choice([4, 6, 8], n), temp=rng.choice([0.25, 1.0], n),
+                          kind=np.where(blocks == "foreign", rng.choice(["LIN", "PAIR", "NOISE"], n), "Q"),
+                          region=np.where(blocks == "foreign", "foreign", "other")))
+    hard = (rng.random(n) < 0.4) & (D.kind != "NOISE").to_numpy()     # noise teachers have nothing to resist
+    D["ceiling"] = np.where(D.kind == "NOISE", 0.5, 0.9)
+    for c in SE.OPPONENTS:
+        D[c] = np.where(hard, 0.7, D.ceiling - 0.01) - rng.uniform(0, 0.01, n)
+    D["auc_S_Q"] = np.where(hard & (D.block != "foreign"), 0.88, D[SE.OPPONENTS].max(axis=1))
+    D["L1_slope"] = np.where(hard, 0.05, 0.0) + rng.normal(0, 0.005, n)
+    D["L2_gain"] = np.where(hard, 0.02, 0.0) + rng.normal(0, 0.005, n)
+    return SE.add_derived(D)
+
+
+def test_evaluate_definitions():
+    D = _fake_library()
+    assert (D.resistant.astype(bool) == (D.ceiling - D.best_cheap >= 0.05)).all()
+    assert np.allclose(D.margin, D.auc_S_Q - D[["auc_classical_best", "auc_nonlinear_best", "auc_S_MF",
+                                                "auc_S_J0", "auc_S_GS"]].max(axis=1))
+    assert D.screen.between(0, 1).all()
+
+
+def test_checks_on_a_library_where_the_screen_works():
+    import screen_evaluate as SE
+    R, D = SE.checks(_fake_library())
+    v = R.set_index("what").value
+    assert v["screen score vs 'resistant', all datasets"] > 0.95
+    assert v["AQFM helps | resistant, non-AQFM teachers"] == 0.0           # by construction
+    assert v["AQFM helps | resistant, AQFM-made teachers"] == 1.0
+    assert R[R.check == "P9"].value.iloc[0] < 0.1                            # NOISE rarely flagged
+
+
+def test_lopo_threshold_never_sees_the_test_p():
+    import screen_evaluate as SE
+    D = _fake_library()
+    f1 = SE.lopo_flags(D)
+    D2 = D.copy()
+    D2.loc[D2.p == 8, "resistant"] = 1.0 - D2.loc[D2.p == 8, "resistant"]   # flip p = 8's truth
+    f2 = SE.lopo_flags(D2)
+    assert (f1[D.p == 8] == f2[D.p == 8]).all()          # p = 8 flags depend only on p = 4, 6
+
+
+def test_auroc_handles_missing():
+    import screen_evaluate as SE
+    assert SE.auroc([0.1, 0.9, np.nan], [0, 1, 1]) == 1.0
+    assert np.isnan(SE.auroc([0.1, 0.2], [1, 1]))
