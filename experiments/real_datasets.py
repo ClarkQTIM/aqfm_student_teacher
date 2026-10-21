@@ -174,9 +174,21 @@ def load_papila(root=None):
     D = D[D.diagnosis.isin([0, 1])]                            # suspects (2) dropped
     y = (D.diagnosis == 1).astype(int).to_numpy()
     groups = D.id.astype(str).str.strip().to_numpy()
-    X = D.drop(columns=["id", "diagnosis", "vf_md", "eye"]).reset_index(drop=True)
+    D = pd.concat([D, power_vectors(D.dioptre_1, D.dioptre_2, D.astigmatism)], axis=1)
+    X = D.drop(columns=["id", "diagnosis", "vf_md", "eye", "dioptre_1", "dioptre_2", "astigmatism"]).reset_index(drop=True)
     return Raw(X, y, groups, {"source": str(d), "label": "glaucoma (1) vs healthy (0); suspects dropped",
-                              "dropped": ["vf_md (leaks the label)", "id", "eye side", "suspect eyes"]})
+                              "dropped": ["vf_md (leaks the label)", "id", "eye side", "suspect eyes"],
+                              "transformed": "sphere, cylinder, axis -> power vectors M, J0, J45 (Amendment 2)"})
+
+
+def power_vectors(sphere, cyl, axis_deg):
+    """Refraction as power vectors (Thibos, Wheeler & Horner 1997): M = S + C/2,
+    J0 = -(C/2) cos 2a, J45 = -(C/2) sin 2a.  Unlike the raw axis (where 0 and 180
+    degrees are the same astigmatism), these behave as ordinary numbers."""
+    a = np.deg2rad(pd.to_numeric(axis_deg, errors="coerce"))
+    S, C = pd.to_numeric(sphere, errors="coerce"), pd.to_numeric(cyl, errors="coerce")
+    return pd.DataFrame({"refr_M": S + C / 2, "refr_J0": -(C / 2) * np.cos(2 * a),
+                         "refr_J45": -(C / 2) * np.sin(2 * a)}, index=sphere.index)
 
 
 def load_grape(root=None):

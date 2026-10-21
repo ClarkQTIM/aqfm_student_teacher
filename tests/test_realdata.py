@@ -187,6 +187,7 @@ def test_papila_adapter(tmp_path, monkeypatch):
     r = RD.load_papila(root=tmp_path)
     assert len(r.y) == 5 and r.y.sum() == 2                     # suspect eye dropped
     assert "vf_md" not in r.X and "id" not in r.X and "diagnosis" not in r.X
+    assert {"refr_M", "refr_J0", "refr_J45"} <= set(r.X) and "astigmatism" not in r.X
     assert sorted(set(r.groups)) == ["#001", "#002", "#003"]
     monkeypatch.setattr(RD, "PAPILA_COUNTS", {0: 333, 1: 87, 2: 68})
     with pytest.raises(RD.NotReady, match="differ from the paper"):
@@ -222,3 +223,20 @@ def test_fives_adapter(tmp_path):
                   "cre_veins": [15.0, 16.0, np.nan], "sparsity": [0.1, 0.2, 0.3]}).to_csv(d / "fives_vascx_dataset.csv", index=False)
     r = RD.load_fives_vascx(root=tmp_path)
     assert r.y.tolist() == [0, 1, 1] and list(r.X.columns) == ["cre_veins", "sparsity"] and r.groups is None
+
+
+def test_power_vectors():
+    pv = RD.power_vectors(pd.Series([0.75, -2.0]), pd.Series([-1.75, -1.0]), pd.Series([90, 180]))
+    assert np.allclose(pv.refr_M, [-0.125, -2.5])
+    assert np.allclose(pv.refr_J0, [-0.875, 0.5]) and np.allclose(pv.refr_J45, [0, 0], atol=1e-12)
+    same = RD.power_vectors(pd.Series([0.0, 0.0]), pd.Series([-1.0, -1.0]), pd.Series([0, 180]))
+    assert np.allclose(same.iloc[0], same.iloc[1])                  # 0 and 180 degrees are the same astigmatism
+
+
+def test_missing_datasets_are_listed(tmp_path, monkeypatch):
+    monkeypatch.setattr(RD, "DATA_ROOT", tmp_path / "data")
+    RL.do_prepare(tmp_path / "out", ["keratoconus"])
+    info = json.loads((tmp_path / "out" / "keratoconus" / "PREP.json").read_text())
+    assert info["status"] == "not obtained" and "not finished" in info["reason"]
+    row = RL.score_dataset(tmp_path / "out", "keratoconus")
+    assert row["status"] == "not obtained" and row["reason"]

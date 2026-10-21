@@ -198,13 +198,18 @@ def do_prepare(out, only):
     out.mkdir(parents=True, exist_ok=True)
     for name in only or DESIGN["datasets"]:
         o = out / name / "PREP.json"
-        if o.exists():
+        if o.exists() and json.loads(o.read_text())["status"] in ("ok", "dropped"):
             print(f"[skip] {name}: already prepared")
             continue
         try:
             info = prepare(name, out)
         except RD.NotReady as e:
+            # recorded so the results table lists it with the reason (plan Section 9);
+            # retried on the next `prepare` in case the files have arrived
             print(f"[not ready] {name}: {e}")
+            (out / name).mkdir(parents=True, exist_ok=True)
+            o.write_text(json.dumps(dict(name=name, status="not obtained", reason=str(e).splitlines()[0],
+                                         n=None, positives=None), indent=2))
             continue
         (out / name).mkdir(parents=True, exist_ok=True)
         o.write_text(json.dumps(info, indent=2, default=str))

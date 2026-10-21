@@ -205,3 +205,15 @@ These were settled from the column headers alone. No dataset had been prepared o
   - **Caveat:** the file has no patient IDs, so each image is treated as its own patient. If
     one patient has several images, the confirmation half isn't fully independent. This is
     reported alongside the result.
+
+### Amendment 2 (2026-10-21, before anything is modelled)
+
+- **PAPILA refraction as power vectors.**
+  - The file gives sphere, cylinder and the astigmatism **axis** in degrees. An axis is an
+    angle: 0° and 180° are the same astigmatism, so it can't go in as an ordinary number.
+  - The three columns are replaced by the standard power vectors (Thibos, Wheeler & Horner
+    1997): M = S + C/2, J0 = −(C/2)·cos 2α, J45 = −(C/2)·sin 2α.
+  - Agreed with Christopher before any run.
+- **Datasets not obtained are listed in the results**, with the reason, as Section 9 requires:
+  keratoconus (no file obtained) and PERG-IOBA (needs signal processing; not attempted).
+  `prepare` retries them if the files later appear.
