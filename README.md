@@ -34,6 +34,7 @@ docs/screen_plan.md      plan for the screen study (checks fixed before running)
 docs/screen.md           short readable summary of the screen study's results
 docs/realdata_plan.md    plan for the real-data study (checks fixed before any real data are modelled)
 docs/realdata_results.md results of the real-data study (5 ophthalmic datasets)
+docs/realdata_overview.tex readable write-up of the real-data study (companion to aqfm_overview.tex)
 runs/                    results of record (NOT in git; large)
   tau_sweep/             main run + add-ons  -> Sections 2-5
   teacher_student_v2/    earlier 216-dataset run (cited for counts only)

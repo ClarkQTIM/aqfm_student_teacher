@@ -1,0 +1,281 @@
+\documentclass[11pt]{article}
+% Companion to aqfm_overview.tex (informal). For two columns: add "twocolumn" to the class options.
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{float}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage[authoryear,round]{natbib}
+\usepackage[colorlinks=true,linkcolor=blue!50!black,citecolor=blue!50!black,urlcolor=blue!50!black]{hyperref}
+\setlength{\parskip}{0.5em}
+\setlength{\parindent}{0pt}
+
+\title{\bfseries Does the quantum feature map help on real ophthalmic data?\\[0.3em]
+\large The same students, now on five public clinical tables}
+\author{Christopher Clark}
+\date{Draft, \today}
+
+\begin{document}
+\maketitle
+
+% =====================================================================
+\section{What we're doing and why}
+
+\textbf{Where we left off.} In the teacher--student experiments (companion overview) we let the quantum map
+\emph{make} the labels and asked who could learn them. On those labels there is one region (strong coupling,
+a medium anneal, a readout including $\langle X_i\rangle$ and $\langle Y_i\rangle$) where nothing classical,
+and none of the map's cheap classical versions, catches up. A follow-up study showed two more things. First,
+no test on the data alone can say in advance that a dataset \emph{needs} the map: anything classical that
+could detect such signal would itself be a classical model using it. Second, a short ladder of cheaper models
+\emph{can} rule datasets out. And on hard labels the map did \emph{not} make, it helped only about 4\% of the
+time.
+
+\textbf{The question here.} What happens on real data? We took every public tabular ophthalmic dataset we
+could obtain and ran exactly the same students on it. We asked two things:
+\begin{enumerate}\setlength{\itemsep}{2pt}
+\item \textbf{The ladder.} Does the exact map beat everything cheaper (classical features, nonlinear
+learners, and the map's own mean-field and no-coupling versions), on data held back from every choice?
+\item \textbf{The feature count.} Even if classical models catch up, do they need \emph{more} features than
+the map does to get there? That would be a result even without a win.
+\end{enumerate}
+Everything below (labels, splits, the rule for choosing qubits, what counts as a win, and our predictions) was
+written down before any real dataset was modelled, and committed to the repository first
+(\texttt{docs/realdata\_plan.md}).
+
+\textbf{How this differs from the synthetic study.} The map and the students are the same. Four things change:
+\begin{itemize}\setlength{\itemsep}{2pt}
+\item \textbf{There is no teacher.} We don't know the best achievable AUC, and no student has the ``true
+recipe'' on its menu. A student can only be compared with the others.
+\item \textbf{Claims are made on held-back data.} Each dataset is split in half once. All choices are made on
+one half, and the other half is used only at the end.
+\item \textbf{The qubits have to be chosen.} Real tables have more features than we have qubits, so we pick
+8 of them.
+\item \textbf{The feature-count question is new} (Section~\ref{sec:count}).
+\end{itemize}
+
+% =====================================================================
+\section{The datasets}
+
+Most public ophthalmic data are images; tabular sets are few. Table~\ref{tab:data} lists the five we used.
+Two more were planned but not run: a keratoconus set (no usable file obtained) and an electroretinogram set
+(needs signal processing first).
+
+\begin{table}[H]\centering\small
+\caption{The five datasets. ``Eyes / patients'': PAPILA and GRAPE have two eyes for most patients, so every
+split keeps both eyes of a patient together.}\label{tab:data}
+\begin{tabular}{@{}p{2.3cm}p{2.6cm}p{3.3cm}p{6.6cm}@{}}\toprule
+dataset & rows & label (positives) & candidate features\\\midrule
+DR Debrecen \citep{Antal2014} & 1151 images & signs of diabetic retinopathy (611) & 19 measurements extracted from Messidor fundus images: lesion counts, disc size, macula--disc distance, quality and pre-screening flags\\
+PAPILA \citep{Kovalyk2022} & 420 eyes / 210 patients & glaucoma (87 eyes, 47 patients) vs healthy; suspects left out & age, sex, refraction, lens status, IOP, corneal thickness, axial length\\
+Myopia \citep{Hosmer2013} & 618 children & myopia within 5 years (81) & age, sex, eye biometry, spherical equivalent, weekly activity hours, parental myopia\\
+GRAPE \citep{Huang2023} & 263 eyes / 144 patients & glaucoma progression, PLR2 criterion (40 eyes) & baseline age, sex, IOP, corneal thickness, glaucoma type, 5 RNFL thicknesses, 61 visual-field points\\
+FIVES / VascX \citep{Jin2022,VascX2024} & 800 images & AMD, DR or glaucoma (600) vs normal & 43 vessel biomarkers (calibre, density, tortuosity, branching)\\\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Columns we removed on purpose.}
+\begin{itemize}\setlength{\itemsep}{2pt}
+\item \textbf{PAPILA:} the visual-field mean defect, which is recorded only for glaucoma patients and so gives
+the label away.
+\item \textbf{GRAPE:} the number of follow-up visits, which isn't known at baseline (and eyes seen more often
+have more chances to be called progressing); also the other two progression definitions.
+\item \textbf{Everywhere:} IDs and administrative columns.
+\end{itemize}
+PAPILA's refraction (sphere, cylinder and the astigmatism \emph{axis}, an angle where $0^\circ$ and
+$180^\circ$ are the same) was converted to the standard power vectors $M=S+C/2$,
+$J_0=-\tfrac C2\cos2\alpha$, $J_{45}=-\tfrac C2\sin2\alpha$ \citep{Thibos1997}.
+
+% =====================================================================
+\section{From a clinical table to 8 qubits}
+
+The same steps were applied to every dataset, in this order.
+\begin{enumerate}\setlength{\itemsep}{2pt}
+\item \textbf{Clean.} Drop any column more than 20\% missing; turn two-level categories into 0/1.
+\item \textbf{Split once, 50/50,} into a \emph{discovery} half and a \emph{confirmation} half, balanced for the
+label and keeping each patient on one side.
+\item \textbf{Fill gaps} with the discovery half's medians.
+\item \textbf{Choose the qubits.} A random forest \citep{Breiman2001} is fitted on the discovery half only, and
+its 8 most important features become the 8 qubits. We chose forest importance over single-feature
+association because it also credits features that matter only in combination, which is what the map
+could exploit.
+\item \textbf{Scale} each chosen feature with the discovery half's mean and SD and clip at $\pm3$: the same
+input pipeline as the synthetic work, so each feature becomes a field $z_i$ on one qubit.
+\end{enumerate}
+The map, its settings ($J=c/7$ with $c\in\{0.5,\dots,8\}$, twelve anneal times $\tau$) and the measurements
+are exactly those of the companion overview.
+
+% =====================================================================
+\section{Students, verdicts and the feature count}
+
+\paragraph{The students} are the same as in the synthetic study: the exact map (540 options), mean-field
+(540), no coupling (108), ground state (15), classical feature expansions with the 22 tuned maps, and the
+nonlinear learners (boosting, RBF SVM, small neural net), all on the 8 chosen inputs. One student is new and
+used for reference only: the nonlinear learners on \emph{all} the dataset's features, which shows how much
+we lost by keeping only 8.
+
+\paragraph{Discovery half.} Nested cross-validation (5 outer, 3 inner folds, grouped by patient where needed),
+exactly as before. Each dataset gets one verdict, checked in this order:
+\begin{enumerate}\setlength{\itemsep}{1pt}
+\item \textbf{classical enough:} a classical or nonlinear student is within 0.01 AUC of the exact map, or above;
+\item \textbf{mean-field enough:} one of the map's classical versions is within 0.01;
+\item \textbf{exact ahead (candidate):} the exact map beats every other student by $\ge0.05$;
+\item \textbf{exact slightly ahead:} anything in between (no claim).
+\end{enumerate}
+
+\paragraph{The feature count.}\label{sec:count} The map hands the classifier its measured expectation values,
+not one number per qubit: with 8 qubits that's 8 (one Pauli type), 24 ($X$, $Y$ and $Z$ on every qubit), 28
+(one type of pair) or up to 108. So the fair comparison counts \emph{those}:
+\begin{gather}
+D_Q=\text{number of map features used},\nonumber\\
+D^\ast=\text{fewest classical features whose AUC reaches the map's AUC}-0.01,\nonumber\\
+R=D^\ast/D_Q .
+\end{gather}
+$R>1$ would mean classical needs more features than the map. We also compare at \emph{equal} count,
+$G=\mathrm{AUC}_{\text{map}}-\mathrm{AUC}$ of the best classical expansion with at most $D_Q$ features, and
+do the same for mean-field, which has exactly the same feature count but is cheap to compute. ``Fewer
+features'' is a claim about compactness, never about cost: each quantum feature would need on the order of
+1000 measurements on hardware.
+
+\paragraph{Confirmation half.} Every student is tuned on the whole discovery half, refitted, and scored
+\emph{once} on the confirmation half; 95\% intervals come from 1000 bootstrap resamples of patients. We
+would claim a \textbf{win} only if a discovery candidate also beats everything by $\ge0.05$ on confirmation,
+with the interval above zero, and \textbf{compactness} only if $G\ge0.02$ there, with the interval above zero.
+
+% =====================================================================
+\section{What we found}
+
+\textbf{Headline.} On none of the five datasets does the exact map beat the cheaper students, and it is not
+more compact either: classical expansions match it with as few or fewer features everywhere. The version of
+the map \emph{with no coupling at all} does as well as the full one.
+
+\begin{table}[H]\centering\small
+\caption{AUC of each student, discovery half (nested cross-validation) $\to$ confirmation half (one held-back
+scoring). ``Nonlinear'' uses the 8 qubit features; ``all features'' is the reference.
+$^\ast$The verdict our rules give for GRAPE is ``exact slightly ahead'' (0.53 vs 0.51), but nothing in GRAPE
+has signal (Section~6).}\label{tab:auc}
+\footnotesize\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}lccccccc@{}}\toprule
+dataset & exact & mean-field & no coupling & classical & nonlinear & all features & verdict\\\midrule
+DR Debrecen & 0.78$\to$0.80 & 0.79$\to$0.80 & 0.79$\to$0.80 & 0.78$\to$0.80 & 0.75$\to$0.74 & 0.79$\to$0.81 & classical enough\\
+Myopia      & 0.81$\to$0.90 & 0.81$\to$0.90 & 0.81$\to$0.90 & 0.80$\to$0.89 & 0.74$\to$0.75 & 0.74$\to$0.81 & classical enough\\
+FIVES/VascX & 0.81$\to$0.83 & 0.81$\to$0.83 & 0.80$\to$0.83 & 0.81$\to$0.83 & 0.80$\to$0.83 & 0.79$\to$0.77 & classical enough\\
+PAPILA      & 0.79$\to$0.57 & 0.85$\to$0.58 & 0.80$\to$0.70 & 0.81$\to$0.74 & 0.80$\to$0.65 & 0.75$\to$0.66 & classical enough\\
+GRAPE       & 0.53$\to$0.53 & 0.43$\to$0.50 & 0.43$\to$0.45 & 0.51$\to$0.57 & 0.48$\to$0.52 & 0.46$\to$0.57 & slightly ahead$^\ast$\\\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[H]\centering\small
+\caption{Margin of the exact map over the best other student, and the feature count. Confirmation margins
+with the 95\% interval; for $G$, the interval's lower end (compactness would need $G\ge0.02$ with the lower
+end above 0).}\label{tab:count}
+\footnotesize\setlength{\tabcolsep}{3.5pt}
+\begin{tabular}{@{}lccccccc@{}}\toprule
+dataset & \shortstack{margin\\(discovery)} & \shortstack{margin\\(confirmation)} & $D_Q$ & $D^\ast$ & $R$ & \shortstack{$G$\\(confirmation)} & \shortstack{lower\\end}\\\midrule
+DR Debrecen & $-0.015$ & $-0.003$ [$-0.013$, $0.002$] & 24 & 8 & 0.33 & $+0.008$ & $-0.012$\\
+Myopia      & $0.000$ & $-0.001$ [$-0.002$, $0.000$] & 8  & 8 & 1.0  & $+0.001$ & $-0.001$\\
+FIVES/VascX & $-0.004$ & $-0.002$ [$-0.031$, $-0.000$] & 8  & 8 & 1.0  & $-0.006$ & $-0.029$\\
+PAPILA      & $-0.071$ & $-0.171$ [$-0.312$, $-0.052$] & 24 & 8 & 0.33 & $-0.071$ & $-0.137$\\
+GRAPE       & $+0.021$ & $-0.047$ [$-0.232$, $0.109$] & 28 & 8 & 0.29 & \multicolumn{2}{c}{(no signal)}\\\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{1. No dataset where the map wins.} On the three datasets with clear signal (DR, myopia, FIVES), every
+student lands on the same confirmation AUC, within a few thousandths. On PAPILA the map is clearly behind.
+
+\textbf{2. No compactness.} Classical expansions reach the map's AUC with 8 features, against the map's 8--24,
+so $R\le1$ everywhere, and no equal-count gap is anywhere near the 0.02 we would need.
+
+\textbf{3. The coupling contributes nothing here.} The no-coupling student matches the exact map on every
+dataset. Its features are a nonlinear transform of each input \emph{separately}, so it is effectively an
+additive model. The exact student, accordingly, mostly chose single-qubit readouts. These clinical tables
+don't contain the kind of joint structure the coupling (and so the quantum part) would add; an interaction
+ladder fitted on the side (additive $\to$ pairwise $\to$ three-way $\to$ unrestricted) also reads three of
+them as additive.
+
+\textbf{4. This is what the synthetic work predicted.} The map's advantage appeared only on data it generated
+itself, and on hard data it didn't generate it helped about 4\% of the time. On five real clinical tables it
+helped zero times. Before running we had predicted no wins (held), at most one compactness result (none) and
+``classical enough'' on all five (four of five; the fifth is GRAPE, where nothing has signal).
+
+% =====================================================================
+\section{Two things we checked afterwards}
+
+These checks were not planned in advance; we did them because two numbers looked odd.
+
+\textbf{PAPILA: why everything drops on the confirmation half.} Plain logistic regression on the same 8 inputs,
+which involves no map at all, shows the same pattern: 0.84 within the discovery half, 0.58 within the
+confirmation half, 0.64 trained on discovery and tested on confirmation, but 0.81 the other way round. The
+single-feature signal differs between halves (age 0.83 vs 0.68; corneal thickness even reverses direction).
+The cause is size: the 87 glaucoma eyes come from only 47 patients, about 24 per half, so the halves can differ
+a lot by chance. The splitting worked as intended (no patient is in both halves). The lesson is that PAPILA
+is much smaller than its 420 rows suggest.
+
+\textbf{GRAPE: no signal from a single baseline visit.} Logistic regression gets 0.46--0.50 within each half
+and across. Cross-validated AUCs below 0.5 are a known artefact when there is nothing to learn and few
+positives (about 20 per half). Predicting progression from one baseline visit doesn't seem possible with
+these features and this sample.
+
+% =====================================================================
+\section{What this does and doesn't show}
+
+\begin{itemize}\setlength{\itemsep}{2pt}
+\item \textbf{It shows} that on the public tabular ophthalmic data we could find, the annealed quantum feature
+map adds nothing beyond its own uncoupled version, and that this is detectable cheaply, before any quantum
+resources are spent: the first rung of the ladder (classical models) already stops every dataset.
+\item \textbf{It doesn't show} that the map can never help on clinical data. Five datasets is few, two of them
+are small in effect (PAPILA, GRAPE), and all are tabular summaries that tend to be close to additive. Data
+with genuinely joint structure (many measurements acting together) are where the map's coupling could
+matter, and the ladder is the way to check.
+\item \textbf{Choosing 8 qubits loses information.} Forest importance favours continuous over binary features
+\citep{Strobl2007}: parental myopia, a known risk factor, was not among myopia's 8 qubits. The all-features
+reference shows how much this cost on each dataset.
+\item \textbf{FIVES has no patient IDs,} so images from the same person could fall in both halves.
+\end{itemize}
+
+% =====================================================================
+\bibliographystyle{plainnat}
+\begin{thebibliography}{10}\small
+\bibitem[Antal and Hajdu(2014)]{Antal2014}
+B.~Antal, A.~Hajdu. An ensemble-based system for automatic screening of diabetic retinopathy.
+\emph{Knowledge-Based Systems} 60, 2014. \href{https://arxiv.org/abs/1410.8576}{arXiv:1410.8576}.
+
+% TODO: verify author list
+\bibitem[Kovalyk et~al.(2022)]{Kovalyk2022}
+O.~Kovalyk et~al. PAPILA: Dataset with fundus images and clinical data of both eyes of the same patient for
+glaucoma assessment. \emph{Scientific Data} 9, 2022.
+\href{https://www.nature.com/articles/s41597-022-01388-1}{link}.
+
+\bibitem[Hosmer et~al.(2013)]{Hosmer2013}
+D.~W.~Hosmer, S.~Lemeshow, R.~X.~Sturdivant. \emph{Applied Logistic Regression}, 3rd ed. Wiley, 2013
+(myopia data from the Orinda Longitudinal Study of Myopia; R package \texttt{aplore3}).
+
+% TODO: verify author list
+\bibitem[Huang et~al.(2023)]{Huang2023}
+X.~Huang et~al. GRAPE: A multi-modal dataset of longitudinal follow-up visual field and fundus images for
+glaucoma management. \emph{Scientific Data} 10, 2023.
+\href{https://www.nature.com/articles/s41597-023-02424-4}{link}.
+
+% TODO: verify author list
+\bibitem[Jin et~al.(2022)]{Jin2022}
+K.~Jin et~al. FIVES: A fundus image dataset for artificial intelligence based vessel segmentation.
+\emph{Scientific Data} 9, 2022. \href{https://www.ncbi.nlm.nih.gov/pmc/articles/PMC9352679/}{link}.
+
+% TODO: add author list
+\bibitem[VascX(2024)]{VascX2024}
+VascX Models: Model ensembles for retinal vascular analysis from color fundus images.
+\href{https://arxiv.org/abs/2409.16016}{arXiv:2409.16016}, 2024.
+
+\bibitem[Thibos et~al.(1997)]{Thibos1997}
+L.~N.~Thibos, W.~Wheeler, D.~Horner. Power vectors: an application of Fourier analysis to the description and
+statistical analysis of refractive error. \emph{Optometry and Vision Science} 74, 1997.
+
+\bibitem[Breiman(2001)]{Breiman2001}
+L.~Breiman. Random forests. \emph{Machine Learning} 45, 2001.
+
+\bibitem[Strobl et~al.(2007)]{Strobl2007}
+C.~Strobl, A.-L.~Boulesteix, A.~Zeileis, T.~Hothorn. Bias in random forest variable importance measures:
+illustrations, sources and a solution. \emph{BMC Bioinformatics} 8, 2007.
+\end{thebibliography}
+
+\end{document}
