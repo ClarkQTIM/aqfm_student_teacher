@@ -29,7 +29,8 @@ Usage (from the repo root):
   python experiments/realdata.py run     --out runs/realdata --workers 8
   python experiments/realdata.py confirm --out runs/realdata --workers 8
   python experiments/realdata.py score   --out runs/realdata
-Add --only NAME [NAME ...] to restrict to some datasets.  Every phase skips work
+Add --group pool to run the 55 Run-2 datasets instead (output runs/realdata_pool), and
+--only NAME [NAME ...] to restrict to some datasets.  Every phase skips work
 that is already done; nothing outside OUT and data/ophtho is read or written.
 """
 
@@ -72,7 +73,8 @@ DESIGN = {
     "version": "realdata_1",
     "plan": "docs/realdata_plan.md",
     "datasets": ["dr_debrecen", "papila", "myopia", "grape", "keratoconus", "perg_ioba", "fives_vascx"],
-    "p_max": 8, "p_min": 4,
+    "pool": RD.POOL,                    # Amendment 3: the 55 Run-2 datasets (--group pool)
+    "p_max": 8, "p_min": 2,             # Amendment 3: 2 (was 4; no effect on the 5 ophthalmic runs, all p = 8)
     "missing_max": 0.20,
     "rf_trees": 500, "rf_seed": 0,
     "clip": 3.0,
@@ -196,7 +198,7 @@ def prepare(name, out, d=DESIGN):
 
 def do_prepare(out, only):
     out.mkdir(parents=True, exist_ok=True)
-    for name in only or DESIGN["datasets"]:
+    for name in only:
         o = out / name / "PREP.json"
         if o.exists() and json.loads(o.read_text())["status"] in ("ok", "dropped"):
             print(f"[skip] {name}: already prepared")
@@ -229,7 +231,7 @@ def load_prepared(out, name):
 
 def ready(out, only, phase_file=None):
     names = []
-    for name in only or DESIGN["datasets"]:
+    for name in only:
         f = out / name / "PREP.json"
         if f.exists() and json.loads(f.read_text())["status"] == "ok":
             names.append(name)
@@ -574,11 +576,41 @@ def checks(T):
     return pd.DataFrame(rows, columns=["check", "what", "count", "of", "prediction"])
 
 
-def do_score(out, only):
-    names = [n for n in (only or DESIGN["datasets"]) if (out / n / "PREP.json").exists()]
+def checks_pool(T):
+    """Amendment 3 predictions for the 55-dataset pool (written knowing Run 2's results)."""
+    run = T[T.verdict.notna()] if "verdict" in T else T.iloc[0:0]
+    conf = run[run.confirmed_win.notna()] if "confirmed_win" in run else run.iloc[0:0]
+    n, nc = len(run), len(conf)
+    wins = list(conf.name[conf.confirmed_win.astype(bool)]) if nc else []
+    qp = list(conf.name[conf.confirmed_quantum_part.astype(bool)]) if nc else []
+    j0 = int(((run.auc_S_Q - run.auc_S_J0) <= DESIGN["verdict_tol"]).sum()) if n else 0
+    rows = [
+        ("Q1", "verdict 'classical enough'", int((run.verdict == "classical enough").sum()) if n else 0, n,
+         "prediction: on >= 90% of the datasets run"),
+        ("Q2", "confirmed exact wins", len(wins), nc,
+         "prediction: <= 1, and only monk2 or heart" + (f" (got: {', '.join(wins)})" if wins else "")),
+        ("Q3", "confirmed map compactness", int(conf.confirmed_compact.sum()) if nc else 0, nc, "prediction: <= 2"),
+        ("Q4", "confirmed quantum part", len(qp), int(conf.confirmed_compact.sum()) if nc else 0,
+         "prediction: 0, except possibly monk2" + (f" (got: {', '.join(qp)})" if qp else "")),
+        ("Q5", "no-coupling (J=0) within 0.01 of the exact map", j0, n, "prediction: on >= 80% of the datasets run"),
+    ]
+    K = pd.DataFrame(rows, columns=["check", "what", "count", "of", "prediction"])
+    if n and "boolean_rule" in run:
+        for lab, g in (("Boolean-rule datasets", run[run.boolean_rule]), ("all other datasets", run[~run.boolean_rule])):
+            K.loc[len(K)] = ("Q6", f"{lab}: interaction ladder order >= 3",
+                             int(g.F1_order.astype(str).isin(["3", ">=4"]).sum()), len(g), "reported")
+            K.loc[len(K)] = ("Q6", f"{lab}: median discovery margin (x1000)",
+                             int(round(1000 * g.margin_disc.median())) if len(g) else 0, len(g), "reported")
+    return K
+
+
+def do_score(out, only, group="ophtho"):
+    names = [n for n in only if (out / n / "PREP.json").exists()]
     T = pd.DataFrame([score_dataset(out, n) for n in names])
+    if group == "pool":
+        T["boolean_rule"] = T.name.isin(RD.POOL_BOOLEAN)
     T.to_csv(out / "REAL_DATASETS.csv", index=False)
-    K = checks(T)
+    K = checks(T) if group == "ophtho" else checks_pool(T)
     K.to_csv(out / "REAL_RESULTS.csv", index=False)
     pd.set_option("display.width", 250)
     pd.set_option("display.max_columns", 40)
@@ -594,7 +626,7 @@ def do_score(out, only):
 
 def do_status(only):
     print(f"data folder: {RD.DATA_ROOT}")
-    for name in only or DESIGN["datasets"]:
+    for name in only:
         try:
             r = RD.load(name)
             print(f"  [ready]     {name}: {len(r.y)} rows, {r.X.shape[1]} candidate features, "
@@ -606,10 +638,14 @@ def do_status(only):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("phase", choices=["status", "prepare", "banks", "run", "confirm", "score"])
-    ap.add_argument("--out", type=Path, default=Path("runs/realdata"))
+    ap.add_argument("--group", choices=["ophtho", "pool"], default="ophtho",
+                    help="ophtho: the ophthalmic datasets (default); pool: the 55 Run-2 datasets (Amendment 3)")
+    ap.add_argument("--out", type=Path, default=None, help="default runs/realdata (ophtho) or runs/realdata_pool")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--only", nargs="*")
     a = ap.parse_args()
+    a.out = a.out or Path("runs/realdata" if a.group == "ophtho" else "runs/realdata_pool")
+    a.only = a.only or DESIGN["datasets" if a.group == "ophtho" else "pool"]
     if a.phase == "status":
         do_status(a.only)
     elif a.phase == "prepare":
@@ -621,7 +657,7 @@ def main():
     elif a.phase == "confirm":
         sys.exit(1 if do_confirm(a.out, a.workers, a.only) else 0)
     else:
-        do_score(a.out, a.only)
+        do_score(a.out, a.only, a.group)
 
 
 if __name__ == "__main__":

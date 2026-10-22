@@ -217,3 +217,62 @@ These were settled from the column headers alone. No dataset had been prepared o
 - **Datasets not obtained are listed in the results**, with the reason, as Section 9 requires:
   keratoconus (no file obtained) and PERG-IOBA (needs signal processing; not attempted).
   `prepare` retries them if the files later appear.
+
+### Amendment 3 (2026-10-21, before any of these datasets is run with this pipeline): the 55-dataset Run-2 pool
+
+**What.** The same pipeline, unchanged except where noted below, run on the 55 datasets of the
+earlier "Run 2" ladder.
+- **Command:** `python experiments/realdata.py <phase> --group pool`.
+- **Output:** `runs/realdata_pool`, kept separate from the ophthalmic results.
+- **Dataset list:** copied from Run 2's frozen protocol
+  (`quantum_features/ladder_v1/FROZEN_LADDER_PROTOCOL.json` in the archive) and fixed in
+  `experiments/real_datasets.py` (`POOL`).
+
+**Why.** These are mostly not clinical-summary tables. In particular, nine have labels that are
+**logical rules of the inputs**: monk1–3, parity5+5, mux6, threeOf9, xd6, mofn_3_7_10 and corral.
+Those genuinely have joint structure, which is the kind of structure the map's coupling could use.
+They're reported as a separate subgroup.
+
+**Not a fresh test.** We have seen Run 2's results:
+- no general advantage;
+- two cases survived its per-fold check: **monk2**, where the exact map beat mean-field at the
+  same setting, and **heart** (heart-statlog), where it beat mean-field at strong coupling and a
+  long anneal.
+
+The predictions below are written knowing that. Run 2 used a different protocol: a 40/60 split,
+multi-class AUC, other menus, and no confirmation half. So this run checks its two leads under
+stricter rules, rather than replicating it exactly.
+
+**Data and rules specific to the pool.**
+- **Sources:**
+  - PMLB datasets: read from Run 2's own cache, copied into `data/pmlb_cache/`, so they're the
+    same files.
+  - iris and wine: from scikit-learn.
+  - heart-statlog, glass, yeast and tic-tac-toe: from OpenML, exactly as Run 2's loader made them
+    (glass and yeast keep their two largest classes; tic-tac-toe cells are category codes). The
+    download cache is in `data/openml_cache/`, never the home folder.
+- **More than two classes** (19 datasets): **largest class vs everything else**, keeping every
+  row. A tie goes to the first label in sorted order. With two classes, the later label in sorted
+  order is positive.
+- **More than 3000 rows** (7 datasets): a stratified subsample of 3000, seeded by the dataset
+  name. This is Run 2's limit, but our own draw.
+- **Fewer than 4 features:** allowed down to **p = 2**, because Run 2 kept them (banana and
+  prnn_synth have 2 features; haberman and boxing1/2 have 3). This also applies to the ophthalmic
+  group but changes nothing there, since all of those had p = 8.
+- Everything else is as in Sections 4–7: the 50/50 grouped split, the 8 qubits by random-forest
+  importance, the students, the verdicts, the feature count and the confirmation claims.
+- **One code fix, needed for tiny datasets.** The stacking measure's 25-nearest-neighbour learner
+  now uses at most (training rows − 1) neighbours. On folds with 26 or more training rows it is
+  identical to before, so no earlier result changes. Without it, datasets of about 60 rows or
+  fewer (e.g. mux6) crashed in the screen-measure step.
+
+**Predictions (pool):**
+
+| | Prediction |
+|---|---|
+| **Q1** | Verdict "classical enough" on at least 90% of the datasets run |
+| **Q2** | At most **one** confirmed exact win, and only on monk2 or heart |
+| **Q3** | At most **two** confirmed compactness results |
+| **Q4** | No confirmed quantum part (exact over mean-field), except possibly monk2 |
+| **Q5** | The no-coupling (J=0) student within 0.01 of the exact map on at least 80% of the datasets run |
+| **Q6** | Reported, no prediction: the Boolean-rule subgroup vs the rest, as the share with interaction order ≥ 3 and the median margin |

@@ -246,3 +246,13 @@ def test_auroc_handles_missing():
     import screen_evaluate as SE
     assert SE.auroc([0.1, 0.9, np.nan], [0, 1, 1]) == 1.0
     assert np.isnan(SE.auroc([0.1, 0.2], [1, 1]))
+
+
+def test_knn_capped_on_tiny_folds():
+    import screen_measures as SM
+    rng = np.random.default_rng(0)
+    Z, y = rng.standard_normal((40, 3)), np.tile([0, 1], 20)
+    out = SM.measure_L2(Z, y, "tiny", SM.outer_folds(Z, y))       # inner folds of ~21 rows: 25-NN impossible
+    assert np.isfinite(out["L2_gain"])
+    m = SM._knn(3).fit(rng.standard_normal((100, 3)), np.tile([0, 1], 50))
+    assert m.n_neighbors == 25                                       # unchanged when there is room

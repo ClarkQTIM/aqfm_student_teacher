@@ -85,7 +85,7 @@ def test_prepare_uses_only_the_discovery_half(tmp_path, monkeypatch):
 
 
 def test_prepare_drops_too_few_features(tmp_path, monkeypatch):
-    X, y, g = _fake_table(k=3)
+    X, y, g = _fake_table(k=1)                                  # p_min is 2 (Amendment 3)
     monkeypatch.setattr(RD, "DATA_ROOT", tmp_path)
     _write_generic(tmp_path, "tiny", X, y, g)
     info = RL.prepare("tiny", tmp_path / "out")
@@ -240,3 +240,63 @@ def test_missing_datasets_are_listed(tmp_path, monkeypatch):
     assert info["status"] == "not obtained" and "not finished" in info["reason"]
     row = RL.score_dataset(tmp_path / "out", "keratoconus")
     assert row["status"] == "not obtained" and row["reason"]
+
+
+# ---------------------------------------------------------------- the Run-2 pool (Amendment 3)
+
+def test_pool_list_matches_run2():
+    assert len(RD.POOL) == 55 and len(set(RD.POOL)) == 55
+    assert set(RD.POOL_BOOLEAN) <= set(RD.POOL) and len(RD.POOL_BOOLEAN) == 9
+    assert RL.DESIGN["pool"] == RD.POOL and RL.DESIGN["p_min"] == 2
+
+
+def test_binarize_rule():
+    y, info = RD.binarize([0, 1, 1, 0], "x")
+    assert y.tolist() == [0, 1, 1, 0] and info["classes"] == 2
+    y, _ = RD.binarize(["absent", "present", "present"], "x")
+    assert y.tolist() == [0, 1, 1]
+    y, info = RD.binarize([3, 1, 1, 2, 1, 3], "x")                       # largest class (1) vs rest
+    assert y.tolist() == [0, 1, 1, 0, 1, 0] and info["positive_class"] == "1"
+    y, info = RD.binarize([0, 1, 2, 0, 1, 2], "x")                       # tie: first in sorted order
+    assert info["positive_class"] == "0"
+
+
+def _fake_pmlb(root, name, n, p, seed=0, classes=2):
+    rng = np.random.default_rng(seed)
+    D = pd.DataFrame(rng.standard_normal((n, p)), columns=[f"x{i}" for i in range(p)])
+    D["target"] = rng.integers(0, classes, n)
+    d = root / "pmlb_cache" / name
+    d.mkdir(parents=True)
+    D.to_csv(d / f"{name}.tsv.gz", sep="\t", index=False)
+
+
+def test_pool_loader_reads_cache_and_subsamples(tmp_path):
+    _fake_pmlb(tmp_path, "magic", 5000, 10)
+    _fake_pmlb(tmp_path, "yeast", 400, 8, classes=5)
+    r = RD.load("pmlb_magic", root=tmp_path / "ophtho")
+    assert len(r.y) == 3000 and r.info["subsampled_from"] == 5000 and r.X.shape[1] == 10
+    assert abs(r.y.mean() - 0.5) < 0.05
+    r2 = RD.load("pmlb_magic", root=tmp_path / "ophtho")
+    assert r2.X.equals(r.X)                                              # seeded: the same subsample every time
+    r = RD.load("pmlb_yeast", root=tmp_path / "ophtho")
+    assert len(r.y) == 400 and r.info["classes"] == 5 and r.info["subsampled_from"] is None
+    with pytest.raises(RD.NotReady, match="pmlb_cache"):
+        RD.load("pmlb_monk2", root=tmp_path / "ophtho")
+
+
+def test_pool_bundled_legacy_sets():
+    r = RD.load("iris")
+    assert len(r.y) == 150 and r.X.shape[1] == 4 and r.y.sum() == 50   # setosa (tie -> first) vs rest
+    r = RD.load("wine")
+    assert len(r.y) == 178 and r.y.sum() == 71                          # class 1 (largest) vs rest
+
+
+def test_pool_checks():
+    T = pd.DataFrame({"name": ["pmlb_monk2", "a", "b"], "verdict": ["exact ahead (candidate)", "classical enough",
+                      "classical enough"], "confirmed_win": [True, False, False], "confirmed_compact": [False] * 3,
+                      "confirmed_quantum_part": [False] * 3, "auc_S_Q": [0.8, 0.7, 0.7], "auc_S_J0": [0.7, 0.7, 0.695],
+                      "F1_order": ["3", "1", "1"], "margin_disc": [0.06, -0.01, 0.0],
+                      "boolean_rule": [True, False, False]})
+    K = RL.checks_pool(T).set_index("check")
+    assert K.loc["Q2", "count"] == 1 and "pmlb_monk2" in K.loc["Q2", "prediction"]
+    assert K.loc["Q5", "count"] == 2

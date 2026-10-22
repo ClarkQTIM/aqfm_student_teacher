@@ -92,4 +92,5 @@ It prints the Python and library versions used; save its output next to the run
 - Sections 1-5 of the overview: complete, reproducible from `runs/tau_sweep`.
 - Scaling run (`ts_scaling.py`, p = 4-12, 625 datasets): built and tested, not yet run.
 - Real-data study: run on 5 datasets (2026-10-21); results in `docs/realdata_results.md`.
+- The 55-dataset Run-2 pool: plan Amendment 3; `realdata.py --group pool` (needs Run 2's pmlb_cache copied to data/).
 - Screen study: plan in `docs/screen_plan.md`; teachers, runner, measures and scoring built (`ts_screen.py make/look/run/measures/evaluate`); C measures (P6, P7) not yet.

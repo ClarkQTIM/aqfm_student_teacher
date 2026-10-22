@@ -243,6 +243,107 @@ def load_fives_vascx(root=None):
                             "caveat": "no patient ids: images treated as independent"})
 
 
+# ---------------------------------------------------------------------------
+# the Run 2 pool (55 datasets; plan Amendment 3)
+# ---------------------------------------------------------------------------
+# Same names and sources as Run 2 (archive: quantum_features/ladder_v1/FROZEN_LADDER_PROTOCOL.json).
+# PMLB sets are read from data/pmlb_cache/<name>/<name>.tsv.gz (copied from Run 2's cache, so
+# the files are the ones Run 2 used); iris and wine come with scikit-learn; heart-statlog,
+# glass, yeast and tic-tac-toe are fetched from OpenML with the cache in data/openml_cache.
+
+POOL = ["pmlb_analcatdata_boxing2", "pmlb_analcatdata_boxing1", "pmlb_corral", "pmlb_analcatdata_creditscore",
+        "pmlb_irish", "pmlb_analcatdata_lawsuit", "pmlb_monk1", "pmlb_mux6", "pmlb_haberman", "pmlb_hayes_roth",
+        "pmlb_monk3", "pmlb_appendicitis", "iris", "pmlb_monk2", "pmlb_prnn_synth", "pmlb_mofn_3_7_10",
+        "pmlb_cloud", "pmlb_biomed", "pmlb_new_thyroid", "pmlb_breast_cancer", "pmlb_parity5+5", "pmlb_threeOf9",
+        "pmlb_analcatdata_germangss", "pmlb_tae", "glass_binary", "pmlb_balance_scale", "pmlb_xd6",
+        "pmlb_prnn_crabs", "pmlb_penguins", "pmlb_bupa", "heart", "pmlb_banana", "pmlb_glass2",
+        "pmlb_breast_cancer_wisconsin_original", "pmlb_heart_disease_cleveland", "tic_tac_toe",
+        "pmlb_car_evaluation", "pmlb_analcatdata_dmft", "pmlb_ecoli", "pmlb_saheart", "pmlb_cars", "pmlb_profb",
+        "pmlb_nursery", "wine", "pmlb_led7", "pmlb_titanic", "pmlb_contraceptive_method", "yeast_binary",
+        "pmlb_phoneme", "pmlb_mfeat_morphological", "pmlb_yeast", "pmlb_magic", "pmlb_wine_quality_red",
+        "pmlb_sleep", "pmlb_page_blocks"]
+# labels are known logical functions of the inputs (artificial rule problems): reported separately
+POOL_BOOLEAN = ["pmlb_corral", "pmlb_monk1", "pmlb_monk2", "pmlb_monk3", "pmlb_mux6", "pmlb_parity5+5",
+                "pmlb_threeOf9", "pmlb_xd6", "pmlb_mofn_3_7_10"]
+POOL_MAX_N = 3000                      # Run 2's rule: larger datasets subsampled to 3000 rows
+
+
+def binarize(target, name):
+    """Two classes: positive = the later label in sorted order (1 over 0, 'present' over
+    'absent').  More than two: positive = the LARGEST class, the rest negative (ties: the
+    first in sorted order).  Every row is kept."""
+    t = pd.Series(np.asarray(target)).astype(str)
+    classes = sorted(t.unique())
+    if len(classes) == 2:
+        pos = classes[-1]
+    else:
+        counts = t.value_counts()
+        pos = sorted(counts.index[counts == counts.max()])[0]
+    return (t == pos).astype(int).to_numpy(), {"classes": len(classes), "positive_class": pos}
+
+
+def _subsample(X, target, name, max_n=POOL_MAX_N):
+    if len(X) <= max_n:
+        return X, target, None
+    from sklearn.model_selection import train_test_split
+    import hashlib
+    seed = int(hashlib.sha256(f"subsample_{name}".encode()).hexdigest()[:8], 16)
+    idx = np.arange(len(X))
+    try:
+        keep, _ = train_test_split(idx, train_size=max_n, stratify=np.asarray(target), random_state=seed)
+    except ValueError:                                      # a class too rare to stratify
+        keep, _ = train_test_split(idx, train_size=max_n, random_state=seed)
+    keep = np.sort(keep)
+    return X.iloc[keep].reset_index(drop=True), np.asarray(target)[keep], len(target)
+
+
+def _openml(name, version, root):
+    try:
+        from sklearn.datasets import fetch_openml
+        b = fetch_openml(name=name, version=version, as_frame=True, parser="auto",
+                         data_home=str(_root(root).parent / "openml_cache"))       # never the home folder
+    except Exception as e:                                    # no network, or OpenML down
+        raise NotReady(f"OpenML {name} v{version} could not be fetched: {e}")
+    return b.frame, b.target_names[0] if getattr(b, "target_names", None) else b.frame.columns[-1]
+
+
+def _legacy(name, root):
+    from sklearn.datasets import load_iris, load_wine
+    if name in ("iris", "wine"):
+        d = (load_iris if name == "iris" else load_wine)()
+        return pd.DataFrame(d.data, columns=d.feature_names), d.target, "scikit-learn"
+    spec = {"heart": ("heart-statlog", 1, None), "glass_binary": ("glass", 1, "top2"),
+            "yeast_binary": ("yeast", 1, "top2"), "tic_tac_toe": ("tic-tac-toe", 1, "codes")}[name]
+    F, ycol = _openml(spec[0], spec[1], root)
+    y = F[ycol].astype(str).to_numpy()
+    X = F.drop(columns=[ycol])
+    if spec[2] == "top2":                                   # Run 2: the two largest classes only
+        vc = pd.Series(y).value_counts()
+        keep = np.isin(y, vc.index[:2])
+        X, y = X[keep].reset_index(drop=True), y[keep]
+    if spec[2] == "codes":                                  # Run 2: board cells as category codes
+        X = X.apply(lambda c: c.astype("category").cat.codes.astype(float))
+    return X, y, f"OpenML {spec[0]} v{spec[1]}"
+
+
+def load_pool(name, root=None):
+    root = _root(root)
+    if name.startswith("pmlb_"):
+        pm = name[len("pmlb_"):]
+        f = _need(root.parent / "pmlb_cache" / pm / f"{pm}.tsv.gz",
+                  "copy Run 2's pmlb_cache into data/pmlb_cache (see the README / plan Amendment 3)")
+        D = pd.read_csv(f, sep="\t")
+        target = D.pop("target").to_numpy()
+        X, src = D, f"PMLB {pm} (Run 2 cache)"
+    else:
+        X, target, src = _legacy(name, root)
+    X, target, n_raw = _subsample(pd.DataFrame(X).reset_index(drop=True), target, name)
+    y, binfo = binarize(target, name)
+    return Raw(X, y, None, {"source": src, "label": "binary as is" if binfo["classes"] == 2
+                            else f"largest class ({binfo['positive_class']}) vs rest", **binfo,
+                            "subsampled_from": n_raw, "boolean_rule_dataset": name in POOL_BOOLEAN})
+
+
 def _todo(name, what):
     def f(root=None):
         root = _root(root)
@@ -268,6 +369,8 @@ def load(name, root=None) -> Raw:
     root = _root(root)
     if name in ADAPTERS:
         return ADAPTERS[name](root=root)
+    if name in POOL:
+        return load_pool(name, root)
     return load_generic(name, root)
 
 

@@ -81,8 +81,18 @@ def _splines(p):
                          LogisticRegression(C=0.1, max_iter=5000))
 
 
+class _CappedKNN(KNeighborsClassifier):
+    """25-NN, but never more neighbours than the fold has training rows minus one.
+    Identical to KNeighborsClassifier(25) whenever there are >= 26 training rows
+    (always the case in the synthetic studies); needed for tiny real datasets."""
+
+    def fit(self, X, y):
+        self.n_neighbors = max(1, min(25, len(X) - 1))
+        return super().fit(X, y)
+
+
 def _knn(p):
-    return KNeighborsClassifier(25)
+    return _CappedKNN(25)
 
 
 L1_LEARNERS = {"poly3": _poly3, "hgb": lambda p: _hgb(), "svm": _svm}
