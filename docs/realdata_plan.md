@@ -276,3 +276,17 @@ stricter rules, rather than replicating it exactly.
 | **Q4** | No confirmed quantum part (exact over mean-field), except possibly monk2 |
 | **Q5** | The no-coupling (J=0) student within 0.01 of the exact map on at least 80% of the datasets run |
 | **Q6** | Reported, no prediction: the Boolean-rule subgroup vs the rest, as the share with interaction order ≥ 3 and the median margin |
+
+**Note added 2026-10-22, during the pool run, before any confirmation or scoring.** One pool
+dataset crashed in the discovery step:
+- **Cause:** the learning-curve measure (L1) refits on random 25/50/75% slices of the training
+  rows, and on a small, imbalanced dataset a slice held no positives.
+- **Fix:** when a slice would hold a single class, the same fraction is taken from each class
+  separately.
+- **Effect on earlier results:** none. On the synthetic library the plain slice always holds both
+  classes, so its results are unchanged.
+- **Effect on this study:** L1 is descriptive only and enters no verdict or check. The rerun
+  retries only the failed dataset; the other 49 are not recomputed.
+
+The four OpenML datasets (heart-statlog, glass, yeast, tic-tac-toe) failed to download on the
+first pass (OpenML server errors) and are added in the same rerun.

@@ -256,3 +256,19 @@ def test_knn_capped_on_tiny_folds():
     assert np.isfinite(out["L2_gain"])
     m = SM._knn(3).fit(rng.standard_normal((100, 3)), np.tile([0, 1], 50))
     assert m.n_neighbors == 25                                       # unchanged when there is room
+
+
+def test_learning_curve_on_rare_positives():
+    """small, imbalanced data: a random 25% slice can miss the positives entirely"""
+    import screen_measures as SM
+    rng = np.random.default_rng(3)
+    Z = rng.standard_normal((60, 3))
+    y = np.zeros(60, int)
+    y[:6] = 1
+    out = SM.measure_L1(Z, y, "rare", SM.outer_folds(Z, y))
+    assert np.isfinite(out["L1_slope"])
+    perm = np.arange(60)                                            # a slice with no positives at all
+    sub = SM._subset(perm[::-1], y, 0.25)
+    assert set(y[sub]) == {0, 1}
+    big = np.tile([0, 1], 300)
+    assert len(SM._subset(np.arange(600), big, 0.25)) == 150        # unchanged when both classes are present

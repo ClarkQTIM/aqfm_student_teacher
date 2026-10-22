@@ -148,6 +148,18 @@ def _asymptote(n, test, train):
         return np.nan
 
 
+def _subset(perm, y, f):
+    """the first fraction f of a random order of the training rows.  If that slice holds
+    only one class (possible on small, imbalanced real datasets), take the same fraction
+    of each class separately instead (at least one row of each).  On the synthetic
+    library the plain slice always holds both classes, so this never changes its results."""
+    sub = perm[: int(round(f * len(perm)))]
+    if len(np.unique(y[sub])) == 2:
+        return sub
+    parts = [perm[y[perm] == c] for c in np.unique(y[perm])]
+    return np.concatenate([q[: max(1, int(round(f * len(q))))] for q in parts])
+
+
 def measure_L1(Z, y, name, folds):
     p = Z.shape[1]
     test = {k: np.zeros(len(FRACTIONS)) for k in L1_LEARNERS}
@@ -158,7 +170,7 @@ def measure_L1(Z, y, name, folds):
         for rep in range(L1_REPEATS):
             perm = _rng(name, "L1", fo, rep).permutation(tr)      # nested: each size is a prefix
             for i, f in enumerate(FRACTIONS):
-                sub = perm[: int(round(f * len(tr)))]
+                sub = _subset(perm, y, f)
                 sizes[i] = len(sub)
                 for k, mk in L1_LEARNERS.items():
                     m = _fit(lambda: mk(p), Z[sub], y[sub])
