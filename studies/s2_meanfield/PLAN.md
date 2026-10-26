@@ -1,6 +1,7 @@
 # S2: Does mean-field catch up with the exact map as p grows?
 
-*Plan, DRAFT 2026-10-26. Not yet committed as final; nothing has been run.*
+*Plan, FINAL 2026-10-26. The predictions (Section 5) are exactly as committed in the draft
+(6bb5cf7); the changes made while writing the code are listed in Section 8.*
 
 ## 1. Why this comes first
 
@@ -57,13 +58,12 @@ For each (p, cell), over the 400 samples:
 1. **Readout error, E.** The root-mean-square distance between exact and mean-field Bloch
    vectors (⟨X_i⟩, ⟨Y_i⟩, ⟨Z_i⟩), over samples and qubits. This is the most direct "how
    wrong is mean-field" number.
-2. **Missing correlations, C.** Mean-field sets the connected correlations
-   ⟨Z_i Z_j⟩ − ⟨Z_i⟩⟨Z_j⟩ to zero; we measure the exact ones. We report two numbers:
-   - **C_pair:** the typical size of one pair's correlation, the mean |·| over pairs and
-     samples. This can shrink just because each pair coupling shrinks as 1/p.
-   - **C_feedback:** what the missing correlations do to one qubit, J · Σ_j |C_ij|, averaged
-     over i and samples. This is the part that matters for whether mean-field's field is
-     right.
+2. **Missing correlations, C.** Mean-field sets every connected correlation
+   ⟨P_i P_j⟩ − ⟨P_i⟩⟨P_j⟩ to zero; we measure the exact ones.
+   - **C_pair:** the typical size of one pair's correlation, the mean |·| over pairs,
+     P ∈ {X, Y, Z} and samples. **C_ZZ** is the same for Z only.
+   - **C_coll:** what the correlations add up to on one qubit, J · |Σ_j C^ZZ_ij| (the sum is
+     signed), averaged over i and samples. Correlations that cancel don't count here.
 3. **Label-level error, U.** How much of an exact teacher's noise-free score mean-field
    features *cannot* explain.
    - Use 20 random readout weight vectors per cell, the τ-sweep recipe without the coin flip.
@@ -72,6 +72,10 @@ For each (p, cell), over the 400 samples:
    - U = 1 − R², the median over the 20.
    
    This ties the physics back to what a student sees.
+
+   One known bias: an out-of-fold fit with 3p features on 320 training rows overstates U by
+   roughly 3p/320. That's about 4% of U at p = 4 and 15% at p = 16, which makes U look like it
+   falls *more slowly* than it does. So it works against M4, not for it.
 
 **Exponent.** For each cell and measure, fit log(measure) = a − α·log p over p ≥ 4. We get a
 95% interval for α by bootstrapping the samples. Larger α means mean-field catches up faster.
@@ -85,7 +89,7 @@ p = 2–3 are reported but left out of the fit, since they're too small for a po
 | **M2** | **Window:** E falls with p in at least 9 of the 12 window cells (α's interval above 0) |
 | **M3** | **Slower in the window:** the median α for E over window cells is below the median over control cells, with the bootstrap interval of the difference below 0 |
 | **M4** | **Labels:** the label-level error U falls with p in the window (median α over window cells > 0, interval above 0) |
-| **M5** | *Reported, no prediction:* C_pair and C_feedback against p, and the p at which U would drop below 0.01 if each window cell's fitted power law held. That last one is an extrapolation, labelled as such |
+| **M5** | *Reported, no prediction:* C_pair, C_ZZ and C_coll against p, and the p at which U would drop below 0.01 if each window cell's fitted power law held. That last one is an extrapolation, labelled as such |
 
 M2 and M3 together are "falls everywhere, but more slowly in the window". If M2 fails, mean-field
 is *not* catching up in the window over this range of p, which would be the surprising outcome.
@@ -106,3 +110,27 @@ qubits costs roughly 4–5× more.
 - It doesn't touch classical learners (that's S1) or other couplings (that's S3).
 - The exponents are fitted over p = 4–16. They describe that range; they aren't
   infinite-p limits.
+
+## 8. Changes from the draft, and how it runs
+
+**Changes, made while writing the code:**
+- **Correlation measure.** The draft's "C_feedback = J · Σ_j |C_ij|" is, for our uniform
+  coupling, exactly c × (the mean |C_ij| over pairs), so it would have added nothing. It's replaced by C_coll (signed
+  sum, Section 4), and C_ZZ is added. Both are report-only (M5).
+- **Bias note on U** added to Section 4.
+- **No prediction changed.**
+
+**Disclosure.** While testing the code, a smoke run computed the measures at p = 2–6 (all 14
+cells, 400 rows), after the draft predictions were committed. The predictions above are
+unchanged from that commit.
+
+**Code:** `studies/s2_meanfield/run.py`, with phases `time`, `banks`, `measure`, `score`.
+Shared code is in `studies/common/`. Tests: `tests/test_studies_s2.py`.
+
+**Outputs:**
+- simulations: `runs/studies/banks/alltoall/`;
+- results: `runs/studies/s2/S2_MEASURES.csv`, `S2_ALPHAS.csv`, `S2_CHECKS.csv`.
+
+**p = 16:** runs only if `time --p 16` estimates under about 2 hours on 31 workers. Its exponents
+are then refitted with p = 16 included, and both fits are reported.
+
