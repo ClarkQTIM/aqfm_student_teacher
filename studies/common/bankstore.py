@@ -53,9 +53,10 @@ def pool_inputs(p: int) -> np.ndarray:
     return np.clip(x, -CLIP, CLIP)
 
 
-def piece_rows(p: int) -> int:
-    """rows per parallel job, sized so one job takes minutes, not hours"""
-    if p <= 10:
+def piece_rows(p: int, kind: str = "Q") -> int:
+    """rows per parallel job, sized so one job takes minutes, not hours.
+    Mean-field and J = 0 cost O(p) per row, so they are never split."""
+    if p <= 10 or kind != "Q":
         return BLOCK
     return {11: 200, 12: 100, 13: 50, 14: 25, 15: 16}.get(p, 8)
 
@@ -72,7 +73,7 @@ def block_path(root, p, kind, c, tau, b) -> Path:
 def piece_specs(root, p, kind, c, tau, b):
     """the (start, stop) row ranges, within the pool, that make up block b"""
     lo, hi = b * BLOCK, (b + 1) * BLOCK
-    step = piece_rows(p)
+    step = piece_rows(p, kind)
     return [(s, min(s + step, hi)) for s in range(lo, hi, step)]
 
 

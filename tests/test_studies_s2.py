@@ -45,7 +45,7 @@ def test_pieces_cover_the_block_exactly():
 
 def test_pieces_merge_to_the_direct_computation(tmp_path, monkeypatch):
     monkeypatch.setattr(bs, "BLOCK", 12)
-    monkeypatch.setattr(bs, "piece_rows", lambda p: 5)                       # uneven last piece
+    monkeypatch.setattr(bs, "piece_rows", lambda p, kind="Q": 5)                       # uneven last piece
     for s, e in bs.piece_specs(tmp_path, 3, "Q", 2.0, 3.0, 1):
         assert bs.compute_piece((tmp_path, 3, "Q", 2.0, 3.0, 1, s, e))[0].startswith("ok")
     assert bs.merge_block(tmp_path, 3, "Q", 2.0, 3.0, 1)
@@ -126,3 +126,35 @@ def test_banks_measure_score_end_to_end(tmp_path, monkeypatch):
     K = pd.read_csv(tmp_path / "s2" / "S2_CHECKS.csv")
     assert list(K.check) == ["M1", "M2", "M3", "M4"]
     S2.do_banks(ps, workers=2)                                      # restartable: everything skipped
+
+
+def test_amendments_end_to_end(tmp_path, monkeypatch):
+    """A1/A2 plumbing; with ONE block, A2's U equals the primary U exactly (same teachers,
+    same folds), and A1's best-setting U can only be lower or equal."""
+    monkeypatch.setattr(bs, "BLOCK", 20)
+    monkeypatch.setattr(S2, "BANKS", tmp_path / "banks")
+    monkeypatch.setattr(S2, "OUT", tmp_path / "s2")
+    monkeypatch.setattr(S2, "MENU", [(2.0, 3.0), (0.5, 1.0), (8.0, 20.0)])
+    monkeypatch.setattr(S2, "AMEND_BLOCKS", 1)
+    monkeypatch.setitem(S2.DESIGN, "n_boot", 30)
+    monkeypatch.setitem(S2.DESIGN, "n_weights", 4)
+    (tmp_path / "s2").mkdir()
+    ps = [2, 4, 5, 6]
+    S2.do_banks(ps, workers=4, blocks=1, menu=True)
+    assert S2.amend_available_ps() == ps
+    S2.do_measure(workers=4)
+    S2.do_amend(workers=4)
+    M = pd.read_csv(tmp_path / "s2" / "S2_AMEND.csv")
+    assert len(M) == len(ps) * 14
+    assert np.allclose(M.U_same800, M.U_same400)                   # one block: identical to primary U
+    assert np.isfinite(M.U_best800).all() and (M.U_best800 >= 0).all()   # (this test's menu omits most cells' own setting)
+    assert pd.read_csv(tmp_path / "s2" / "S2_AMEND_CHECKS.csv").shape[0] == 2
+
+
+def test_two_blocks_extend_the_same_pool(tmp_path, monkeypatch):
+    monkeypatch.setattr(bs, "BLOCK", 10)
+    monkeypatch.setattr(S2, "BANKS", tmp_path)
+    S2.do_banks([3], workers=2, blocks=2)
+    B = bs.load_rows(tmp_path, 3, "Q", 2.0, 3.0, 2)
+    want = compute_bank(bs.pool_inputs(3)[:20], coupling(3, 2.0, "Q"), 3.0, method="strang")
+    assert np.allclose(B, want)

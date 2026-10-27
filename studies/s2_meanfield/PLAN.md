@@ -134,3 +134,39 @@ Shared code is in `studies/common/`. Tests: `tests/test_studies_s2.py`.
 **p = 16:** runs only if `time --p 16` estimates under about 2 hours on 31 workers. Its exponents
 are then refitted with p = 16 included, and both fits are reported.
 
+
+## 9. Amendment 1 (2026-10-27, AFTER seeing the primary results)
+
+**What the primary run found** (p = 2–14, `runs/s2.log`):
+- **M1 held:** mean-field converges in both controls.
+- **M2 failed:** the readout error E falls in only 5 of 12 window cells.
+- **M3 held,** trivially.
+- **M4 failed:** U in the window doesn't fall (median α = −0.09 [−0.10, −0.04]); it stays near
+  0.82 from p = 2 to 14.
+
+These results stand as reported. The amendment adds two checks, because the failure of M4 is
+the headline and could have two mundane causes:
+
+- **A1: the best mean-field setting, not the matched one.** U compares the exact teacher with
+  mean-field at the *same* (c, τ). The τ sweep's mean-field student could choose any of 60
+  settings (c ∈ {0.5, 1, 2, 4, 8} × the 12 τ values). So for each exact teacher, U_best uses
+  the setting with the smallest out-of-fold error.
+  - Picking on the same errors flatters mean-field slightly. That works *against* "mean-field
+    can't catch up".
+  - Every cell's own setting is in the menu, so U_best ≤ U.
+- **A2: 800 rows instead of 400.** The out-of-fold U is overstated by roughly 3p/(training
+  rows): about 13% at p = 14 with 320 training rows, against 4% at p = 4. That could hide a
+  slow decline. A second block of 400 pool rows halves the bias.
+
+**Checks, post hoc and labelled as such:** M4 re-evaluated with U_same on 800 rows (A2) and
+with U_best on 800 rows (A1), same fit range (p ≥ 4) and the same bootstrap.
+
+**Interpretation, fixed now:**
+- **If M4 still fails under A1:** "mean-field doesn't catch up in the window up to p = 14"
+  holds against the strongest mean-field student we have.
+- **If M4 holds under A1 or A2:** the primary failure was due to the matched setting or the
+  sample size, and we'll say that instead.
+
+**Code:** `run.py banks --blocks 2 --menu`, then `run.py amend`. The output is
+`S2_AMEND.csv`, `S2_AMEND_ALPHAS.csv`, `S2_AMEND_CHECKS.csv`. One test checks that with a
+single block, A2 reproduces the primary U exactly.
