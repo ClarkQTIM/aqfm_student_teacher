@@ -1,9 +1,10 @@
-# S2 results: mean-field does not catch up in the window (p = 2–14)
+# S2 results: mean-field does not catch up in the window (p = 2–16)
 
 *Runs of 2026-10-27 on the server. The plan, with predictions M1–M5 fixed in commit 6bb5cf7, is
 in `PLAN.md`. Amendment 1 (A1, A2) was added after the primary results. Logs: `runs/s2.log`
-(primary) and `runs/s2_amend.log` (amendment). Tables are in `runs/studies/s2/`. A run at
-p = 16 (block 0 only) is in progress and will be added in Section 6.*
+(primary) and `runs/s2_amend.log` (amendment). Tables are in `runs/studies/s2/`. p = 16
+(block 0, 400 rows) was added afterwards (`runs/s2_p16.log`, Section 6). The p = 2–14 tables
+are kept as `*_p2-14.csv`.*
 
 ## In one paragraph
 
@@ -12,14 +13,14 @@ should become exact as the number of qubits grows. It does, **outside the window
 control cells, the share of the exact map's labels that mean-field can't explain falls from
 a few percent to under 0.1% by p = 14. **Inside the window it doesn't fall at all.**
 - With mean-field at the same coupling and anneal time, about 80% of the exact labels stay
-  unexplained at every p from 2 to 14.
+  unexplained at every p from 2 to 16.
 - With mean-field allowed to pick the best of 60 settings, about 65–75% stay unexplained, with
   no trend.
 
 The correlations mean-field ignores get smaller pair by pair, but they share a sign. So
 their total pull on each qubit stays the same size as p grows. We predicted the opposite
 (slow convergence, but convergence), so **the window is not a small-system effect over
-p = 2–14**.
+p = 2–16**.
 
 ## 1. Checks
 
@@ -108,7 +109,7 @@ diverge.
 ## 5. What this means
 
 - **For the window:** it isn't a small-system artifact over the range we can simulate. Over
-  p = 2–14, the exact map's labels stay largely out of reach of every mean-field setting we
+  p = 2–16, the exact map's labels stay largely out of reach of every mean-field setting we
   have.
 - **Earlier hint, now resolved:** the geometric difference g(MF ‖ exact) fell with p
   (`docs/geometry_results.md`). The direct measurement shows mean-field isn't catching up, so
@@ -121,12 +122,31 @@ diverge.
 
 ## 6. p = 16
 
-*In progress (block 0 only, primary measures). To be added here, with the exponents refitted
-on p = 4–16 next to the p = 4–14 fit.*
+Run with block 0 only (400 rows): about 3 hours on 31 workers. The amendments (800 rows, best
+mean-field setting) stay at p ≤ 14. **Adding p = 16 changes nothing.**
+
+| median over cells | p = 14 | p = 16 |
+|---|---|---|
+| window: U (matched, 400 rows) | 0.83 | **0.85** |
+| window: readout error E | 0.80 | 0.78 |
+| window: C_coll (total pull on a qubit) | 2.28 | 2.25 |
+| weak-coupling control: U | 0.0009 | 0.0006 |
+| short-anneal control: U | 0.0009 | 0.0004 |
+
+| check | fit on p = 4–14 | fit on p = 4–16 |
+|---|---|---|
+| M1 (controls converge) | held: 1.08 and 0.45 | held: 1.08 [1.04, 1.11] and 0.47 [0.47, 0.48] |
+| M2 (E falls in ≥ 9 of 12 window cells) | failed: 5 of 12 | failed: 5 of 12 |
+| M3 (slower in the window) | held: −0.77 | held: −0.77 [−0.80, −0.74] |
+| M4 (U falls in the window) | failed: −0.088 [−0.100, −0.040] | failed: **−0.072 [−0.093, −0.045]** |
+
+Each window cell's exponent for U moves by at most 0.05. All 12 still have α ≤ 0.2,
+and eight have α ≤ 0. The extrapolated p at which U would drop below 0.01 stays at
+10⁹ or more, or never, in every window cell. In the controls it's still p ≈ 5 and p ≈ 9.
 
 ## 7. Caveats
 
-- **Range.** p ≤ 14, plus 16 pending. The exponents describe this range, not the infinite-p
+- **Range.** p ≤ 16 (amendments p ≤ 14). The exponents describe this range, not the infinite-p
   limit, and an asymptotic regime could start later.
 - **U is a linear readout's view.** It asks how much of the exact score a *linear* function of
   mean-field features explains. A nonlinear model on mean-field features might do better.
