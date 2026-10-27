@@ -179,6 +179,14 @@ def do_banks(ps, gpus, cpu_workers):
           f"{len(c_jobs)} pieces on {cpu_workers} CPU workers", flush=True)
     t0, fails, done = time.time(), 0, 0
     executors, futs = [], {}
+    # CPU pool FIRST: its workers are forked, and forking is only safe before any thread
+    # exists in this process.  With the default fork start method, ProcessPoolExecutor
+    # forks all its workers on the first submit, before starting its own manager thread.
+    # The GPU pool uses fresh (spawned) processes, so starting it afterwards is safe.
+    if c_jobs:
+        c = ProcessPoolExecutor(cpu_workers, mp_context=mp.get_context("fork"))
+        executors.append(c)
+        futs.update({c.submit(bs.compute_piece, j): j for j in c_jobs})
     if gpus and q_jobs:
         ctx = mp.get_context("spawn")           # CUDA needs fresh processes, not forks
         idq = ctx.Queue()
@@ -187,10 +195,6 @@ def do_banks(ps, gpus, cpu_workers):
         g = ProcessPoolExecutor(gpus, mp_context=ctx, initializer=_gpu_init, initargs=(idq,))
         executors.append(g)
         futs.update({g.submit(gpu_job, j): ("gpu",) + j[1:] for j in q_jobs})
-    if c_jobs:
-        c = ProcessPoolExecutor(cpu_workers)
-        executors.append(c)
-        futs.update({c.submit(bs.compute_piece, j): j for j in c_jobs})
     total = len(futs)
     for fu in as_completed(futs):
         done += 1
