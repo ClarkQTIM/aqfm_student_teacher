@@ -29,6 +29,7 @@ Kinds
 from __future__ import annotations
 
 import hashlib
+import os
 import time
 from pathlib import Path
 
@@ -41,6 +42,13 @@ POOL_ROWS = 40_000
 BLOCK = 400
 CLIP = 3.0
 METHOD = {"Q": "strang", "MF": "meanfield", "J0": "strang"}
+# If this is set (e.g. "cuda:0"), exact (Q) banks are simulated with PyTorch on that device
+# (studies/common/torchsim.py), one whole block per job.  Mean-field and J = 0 stay on CPU.
+TORCH_ENV = "STUDIES_TORCH_DEVICE"
+
+
+def torch_device():
+    return os.environ.get(TORCH_ENV) or None
 
 
 def _seed(s: str) -> int:
@@ -55,8 +63,8 @@ def pool_inputs(p: int) -> np.ndarray:
 
 def piece_rows(p: int, kind: str = "Q") -> int:
     """rows per parallel job, sized so one job takes minutes, not hours.
-    Mean-field and J = 0 cost O(p) per row, so they are never split."""
-    if p <= 10 or kind != "Q":
+    Mean-field and J = 0 cost O(p) per row, so they are never split; on GPU neither is Q."""
+    if p <= 10 or kind != "Q" or torch_device():
         return BLOCK
     return {11: 200, 12: 100, 13: 50, 14: 25, 15: 16}.get(p, 8)
 
@@ -98,7 +106,12 @@ def compute_piece(args):
         return "skip", f.name
     t0 = time.time()
     Z = pool_inputs(p)[start:stop]
-    B = compute_bank(Z, coupling(p, c, kind), tau, method=METHOD[kind])
+    dev = torch_device()
+    if dev and kind == "Q":
+        from studies.common.torchsim import compute_bank_torch      # imported only on GPU workers
+        B = compute_bank_torch(Z, coupling(p, c, kind), tau, device=dev)
+    else:
+        B = compute_bank(Z, coupling(p, c, kind), tau, method=METHOD[kind])
     _save(f, np.asarray(B, dtype=np.float32))
     return f"ok {time.time() - t0:.0f}s", f"p{p} {kind} c{c:g} t{tau:g} rows {start}-{stop}"
 
