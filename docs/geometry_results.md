@@ -5,7 +5,57 @@ run. Log: `runs/geometry.log`. Tables: `runs/tau_sweep/geometry/GEO_TT.csv` (864
 datasets) and `runs/GEO_REAL.csv` (59 real datasets). The run took about 3 minutes on 31
 cores.*
 
-## In one paragraph
+## In plain language
+
+**What we asked.** Our teacher–student experiments found a window (strong coupling, anneal time
+3–20, full readout) where the exact quantum map beats every opponent, including its own
+mean-field twin. A reviewer's first question would be whether that window is real, or an
+artefact of the opponents we picked. So we checked it a completely different way.
+
+**How.** Huang et al. (2021) give a quantity, the geometric difference g, that needs no labels
+and no training. You run two models on the same inputs and ask how differently they arrange
+them: which inputs end up close together and which far apart. If two models arrange the inputs
+almost alike, no labelling can favour one over the other by much. If they arrange them very
+differently, there's room for one to win. We computed g between the exact map and mean-field for
+every τ-sweep dataset, and wrote down in advance what it should do.
+
+**What we found.**
+
+- **The geometry picks out the same window.** Where the two simulators arrange the inputs alike
+  (g below about 5: 66 datasets), the exact map never beats mean-field by 0.05 AUC or more. Every
+  window dataset has g of 9 or more, and in 59 of the 63 the exact map wins by at least that.
+- **It predicts the outcome well.** It separates "exact clearly beats mean-field" from "doesn't"
+  with AUROC 0.95, and ranks the size of the win with Spearman 0.87. We had predicted at least 0.75
+  and 0.5.
+- **It beats the obvious alternative.** Entanglement, the usual guess for what drives quantum
+  advantage, ranks the same wins much worse (Spearman 0.42). Short, strongly coupled anneals are
+  highly entangled yet easy to copy, and g gets those right.
+
+![Geometric difference against the measured exact-over-mean-field gap](figures/fig_geometry_vs_gap.png)
+
+**What it means.** Two independent methods agree on where the window is: the behaviour of trained
+students, and a label-free measure from established theory. That makes the window a property of
+the map's geometry, not of our choice of opponents, and connects our results directly to Huang et
+al.
+
+**What to be careful about.**
+- **It's a second method, not new data.** The window was drawn from the τ sweep before we did the
+  geometry, and the geometry predictions were fixed before g was computed. But the test compares g
+  with gaps measured in those same τ-sweep runs.
+- **It holds for small to moderate regularization** (λ = 0.001–0.1) and fails at λ = 1.
+- **The regularized formula is our derivation** from Huang et al.'s argument. It should be
+  checked against the version in their supplement.
+- **It supports where the window is, not how it scales.** g shrinks somewhat with more qubits
+  while the measured gap doesn't. S2 (`studies/s2_meanfield/RESULTS.md`) measured directly that
+  mean-field doesn't catch up up to 16 qubits.
+
+*Figure: `docs/geometry_figures.py`, from `runs/tau_sweep/geometry/GEO_TT.csv`.*
+
+---
+
+## Details
+
+### In one paragraph (technical)
 
 Huang et al. (2021) define the geometric difference g. It measures how far a copier's kernel
 is from a target's kernel, *without looking at labels*. A small g means no labels on those
@@ -28,7 +78,7 @@ differs. It also explains why entanglement isn't enough. Short, strongly coupled
 What the real data do show is consistent with Huang's framing. Many real datasets have
 inputs on which the map *could* differ (large g), but their labels don't use that room.
 
-## 1. τ sweep: the predictions
+### 1. τ sweep: the predictions
 
 At the primary λ = 0.01, exact teachers, full readout, 180 datasets:
 
@@ -62,7 +112,7 @@ The twin comparison, g(MF ‖ Q), is the one that isolates the quantum part.
   structure, so only the coarsest directions count. The result depends on not
   over-regularizing, and any write-up should say so.
 
-## 2. τ sweep: what we saw beyond the predictions (exploratory)
+### 2. τ sweep: what we saw beyond the predictions (exploratory)
 
 - **g explains why entanglement isn't enough.**
   - Strongly coupled short anneals (c ≥ 2, τ ≤ 1) have median entanglement 0.88, above the
@@ -94,7 +144,7 @@ The twin comparison, g(MF ‖ Q), is the one that isolates the quantum part.
   labels. The bound s_C ≤ g² s_T is often loose. A sample-size sweep should therefore predict
   catch-up from a label-aware quantity, not from g².
 
-## 3. Real data
+### 3. Real data
 
 | | Prediction | Result | |
 |---|---|---|---|
@@ -127,7 +177,7 @@ been paired with training error, as g is paired with t.
 - At the settings the exact student actually chose, the median g_classical is **6.9**. That's
   the level of the τ sweep's weak / short region, where classical always catches up.
 
-## 4. What this means
+### 4. What this means
 
 - **For the teacher–student paper.** The window now has a theory-backed description that
   doesn't depend on our choice of opponents. That answers the objection a reviewer would

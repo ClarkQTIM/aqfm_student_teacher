@@ -6,7 +6,47 @@ in `PLAN.md`. Amendment 1 (A1, A2) was added after the primary results. Logs: `r
 (block 0, 400 rows) was added afterwards (`runs/s2_p16.log`, Section 6). The p = 2–14 tables
 are kept as `*_p2-14.csv`.*
 
-## In one paragraph
+## In plain language
+
+**What we asked.** Our quantum map couples every qubit to every other. With that kind of
+coupling, physics says a cheap classical approximation, mean-field (each qubit feels only the
+average of the others), should become exact as qubits are added. If it did, the window where the
+quantum map can't be copied would just be a small-system effect.
+
+**How.** For 2 to 16 qubits, we ran the exact map and mean-field on the same inputs and measured
+how much of the exact map's label function mean-field's outputs can't reproduce. In the figure,
+lower means mean-field is closer to exact.
+
+**What we found.**
+
+- **Outside the window, mean-field catches up, as physics predicts.** The share it misses falls
+  from about 10% with 2 qubits to under 0.1% with 16.
+- **Inside the window, it never does.** It misses about 80% at every size from 2 to 16 qubits, and
+  still 64–75% when it's allowed to pick its best settings. That's not what we predicted; we
+  expected slow convergence.
+
+![Share of the exact labels mean-field gets wrong, against the number of qubits](figures/fig_s2_meanfield_vs_qubits.png)
+
+- **The reason:** the correlations mean-field ignores all lean the same way, so their combined pull
+  on each qubit stays large however many qubits there are. Outside the window, the same pull fades
+  away.
+
+![Pull of the ignored correlations on one qubit, against the number of qubits](figures/fig_s2_correlations_vs_qubits.png)
+
+**What it means.** The window isn't a small-system artifact, at least up to 16 qubits, the largest
+we can simulate. Inside it, the exact map does something its cheap classical twin can't, at every
+size we tested. That's the strongest "quantum part" evidence in the project so far. It isn't yet
+evidence that a quantum *computer* is needed: up to 16 qubits we simulate it classically, and other
+classical methods besides mean-field (neural networks, better approximations) remain to be tested.
+
+*Figures: `figures.py`, from `S2_MEASURES.csv` / `S2_AMEND.csv` (or the median tables in
+`runs/s2_p16.log` and `runs/s2_amend.log`, which is what these were made from).*
+
+---
+
+## Details
+
+### In one paragraph (technical)
 
 With our coupling (every qubit coupled to every other, J = c/(p−1)), theory says mean-field
 should become exact as the number of qubits grows. It does, **outside the window**: in both
@@ -22,7 +62,7 @@ their total pull on each qubit stays the same size as p grows. We predicted the 
 (slow convergence, but convergence), so **the window is not a small-system effect over
 p = 2–16**.
 
-## 1. Checks
+### 1. Checks
 
 | | Prediction | Result | |
 |---|---|---|---|
@@ -41,7 +81,7 @@ The quantities:
 - **α:** the exponent in measure ∝ p^(−α), fitted on p = 4–14, with a 95% interval from a
   bootstrap over rows. **Positive α = mean-field catching up.**
 
-## 2. Labels: what mean-field can't explain (U, median over cells)
+### 2. Labels: what mean-field can't explain (U, median over cells)
 
 | p | window, matched setting (400 rows) | window, matched (800 rows) | window, **best of 60 settings** (800 rows) | weak-coupling control, matched (800) | short-anneal control, matched (800) |
 |---|---|---|---|---|---|
@@ -68,7 +108,7 @@ mean-field student at p = 14 is one with **much weaker coupling** (c = 0.5 or 1,
 teacher's 2–8). Strongly coupled mean-field is qualitatively wrong in the window. A weakly
 coupled one, closer to independent qubits, is less wrong, but still leaves 33–91% unexplained.
 
-## 3. Readout and correlations
+### 3. Readout and correlations
 
 | median over cells | p = 4 | p = 8 | p = 14 |
 |---|---|---|---|
@@ -94,7 +134,7 @@ coupled one, closer to independent qubits, is less wrong, but still leaves 33–
 **At the longest anneals, things get worse with p.** At τ = 20 with c = 4 or 8, E and U
 *grow* with p (α ≈ −0.2 for E).
 
-## 4. A possible explanation (to be checked, not shown here)
+### 4. A possible explanation (to be checked, not shown here)
 
 In the window, the anneal drives the system through its ordering transition. Near that
 point, the mean-field trajectory is unstable, so quantum fluctuations around it grow quickly
@@ -106,7 +146,7 @@ C_coll fit this picture. We haven't tested it directly, and we need proper refer
 a write-up. A direct test would measure, per p, the time at which exact and mean-field
 diverge.
 
-## 5. What this means
+### 5. What this means
 
 - **For the window:** it isn't a small-system artifact over the range we can simulate. Over
   p = 2–16, the exact map's labels stay largely out of reach of every mean-field setting we
@@ -120,7 +160,7 @@ diverge.
 - **For S3 (other couplings):** less urgent than planned. The current coupling already gives
   a window that doesn't close over this range. S3 becomes about generality, not rescue.
 
-## 6. p = 16
+### 6. p = 16
 
 Run with block 0 only (400 rows): about 3 hours on 31 workers. The amendments (800 rows, best
 mean-field setting) stay at p ≤ 14. **Adding p = 16 changes nothing.**
@@ -144,7 +184,7 @@ Each window cell's exponent for U moves by at most 0.05. All 12 still have α �
 and eight have α ≤ 0. The extrapolated p at which U would drop below 0.01 stays at
 10⁹ or more, or never, in every window cell. In the controls it's still p ≈ 5 and p ≈ 9.
 
-## 7. Caveats
+### 7. Caveats
 
 - **Range.** p ≤ 16 (amendments p ≤ 14). The exponents describe this range, not the infinite-p
   limit, and an asymptotic regime could start later.
