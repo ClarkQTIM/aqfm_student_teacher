@@ -1,7 +1,7 @@
 # S1: How does the classical cost of matching the map grow with the number of qubits?
 
 *Plan. **Part A: FINAL, 2026-10-27**, before any S1 teacher or fit has been computed. **Part B:
-design below; its predictions are fixed in an amendment before Part B's code runs.** S1 reuses
+FINAL in Amendment 1 (Section 9, 2026-10-28)**, before Part B's code ran on any real data. S1 reuses
 S2's simulated banks (same input pool), but no S1 quantity has been looked at.*
 
 ## 1. The question
@@ -146,3 +146,79 @@ C4 data) mirror A1–A3 and get fixed, with Part A's result in hand, before Part
 2. **`teachers`**: minutes.
 3. **`partA`**: least squares with at most 3,000 terms on 30,000 rows per p. Minutes.
 4. **`scoreA`**: seconds.
+
+## 9. Amendment 1 (2026-10-28): Part B, final design and predictions
+
+*Written after Part A's results (`RESULTS.md`) and before any Part B learner has been trained
+on S1 data. It replaces the draft in Section 7 where they differ.*
+
+**What we had seen when writing this.**
+- Part A: polynomial complexity of the window labels is large but doesn't grow with p.
+- The τ sweep's classical cost curves at n = 600 (p = 4–8): in the window, fixed bases stay
+  far below the exact student at every size.
+
+So B1 is largely expected from those. **B2 is the real bet**, and it's the one the user chose:
+networks and trees do better than fixed bases but still fall short.
+
+### Design
+
+- **p:** 4, 5, 6, 8, 10, 12 (Part A's fitting range). **Teachers:** all 99 per p (exact and
+  mean-field at the 14 cells, J = 0 at 5 anneal times; 3 readout seeds each), from the
+  `teachers` phase.
+- **n = labelled rows:** 300, 1,000, 3,000, 10,000, 30,000. The first n rows of the training
+  pool. The first 80% train; the last 20% are **validation**. The test set is always rows
+  30,000–39,999. Sets are nested in n.
+- **Every learner chooses its own settings on the validation rows**, never on test:
+  - the L2 penalty of each logistic regression (λ ∈ {1, 10⁻¹, …, 10⁻⁵});
+  - the checkpoint of each network (early stopping);
+  - and, when families or groups are compared, the size, by lowest validation loss.
+
+  This replaces Section 7's staircase. Every size is run at every n, and "size\*" and "n\*" are
+  read off afterwards.
+- **Reference (open-book):** logistic regression on the teacher's *own* map features (3p
+  numbers ⟨X⟩, ⟨Y⟩, ⟨Z⟩), same n, same rules. For mean-field teachers that's the mean-field map;
+  for J = 0 teachers, the J = 0 map.
+- **Families and grids.**
+
+  | Family | Size | Grid |
+  |---|---|---|
+  | Hermite polynomials + LR | terms D | degree 1 … d_max(p) (≤ 3,000 terms, as Part A) |
+  | Fourier + LR | D | p·{1, 4, 16, 64, 256}; axis-by-axis sin/cos (the τ sweep's balanced Fourier: **no cross terms**) |
+  | Random Fourier features + LR | D | same D; Gaussian kernel, γ = 1/p |
+  | Neural networks | parameters | ReLU, width {16, 64, 256, 1024} × hidden layers {2, 3, 4}; Adam, lr 10⁻³, batch 512, early stopping (validation loss every 50 steps, patience 40 checks, at most 20,000 steps); one network per teacher, trained in parallel on GPU |
+  | Gradient-boosted trees | rounds × leaves | leaves {8, 31, 127} × rounds {100, 300, 1,000, 3,000}; learning rate 0.1; scikit-learn HistGradientBoosting |
+
+  - **"Fixed"** = best of polynomial, Fourier and random Fourier.
+  - **"Learned"** = best of networks and trees.
+- **Shortfall** = reference test AUC − learner test AUC, at the same n.
+  - **"Gets there"** = shortfall ≤ 0.01.
+  - **Cell values** are the median over the 3 readout seeds.
+
+### Predictions (fixed now; tested at n = 30,000)
+
+| | Prediction |
+|---|---|
+| **B0** | **Sanity, must hold for the rest to mean anything:** the learned group gets there in the short-anneal control (c = 4, τ = 1), exact teachers, at every p. Part A shows those labels are almost a cubic polynomial, so a learner that fails here is undertrained |
+| **B1** | **Fixed bases don't get there:** the fixed group is short by more than 0.01 in at least 9 of the 12 window cells (exact teachers), at every p |
+| **B2** | **Learned models do better, but still fall short** (at p = 8): the learned group has a smaller shortfall than the fixed group in at least 9 of 12 window cells, **and** gets there in at most 5 of 12 |
+| **B3a** | **Growth** (the user's hypothesis, first half): per teacher unit, the slope of the learned shortfall against p (p = 4–12). Median for exact teachers in the window > 0 (bootstrap interval above 0) |
+| **B3b** | **Not quantum-specific** (second half): exact-window minus mean-field-window median slope, interval **contains 0** |
+| **B4** | *Reported, no prediction:* n\*, the smallest n at which the learned group gets there (censored at 30,000), by group and p; and which family is chosen |
+
+- **If B0 fails:** the learners need fixing before anything else is read.
+- **If B2 fails because learned models get there:** that's outcome (D), "small-data effect".
+  Then B4 says how much data it takes, and the window claim becomes "at the sample sizes of
+  the τ sweep".
+
+### Run
+
+- **Two commands, run at the same time:**
+  - `partB_gpu --gpus 2`: reference, fixed bases and networks;
+  - `partB_trees --workers 29`: trees.
+
+  That's 31 workers in all, under `taskset -c 0-31`. Both are restartable: finished files are
+  skipped.
+- **`scoreB`** prints the tables and the checks.
+- **Smoke test first.** `--smoke` runs a tiny version at p = 4 (n ≤ 1,000, two small
+  networks, few rounds), written to `runs/studies/s1_smoke/`. It prints timings only, no AUCs.
+

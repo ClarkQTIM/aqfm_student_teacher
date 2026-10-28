@@ -3,8 +3,8 @@
 S1: how does the classical cost of matching the map grow with the number of qubits p?
 Plan and predictions: studies/s1_scaling/PLAN.md (fixed before any run).
 
-This file covers the data and PART A (how complex the label function is, no learners).
-Part B (classical learners) is added once Part A is in.
+This file covers the data, PART A (how complex the label function is, no learners) and PART B
+(how well classical learners do, by size and by number of labelled rows; PLAN.md, Amendment 1).
 
 Phases
   banks    simulate the banks every teacher needs, pool rows 0-39,999 (100 blocks of 400):
@@ -18,12 +18,28 @@ Phases
            noise-free score, degree d = 1 ... d_max(p), trained on rows 0-29,999, tested on
            rows 30,000-39,999        -> runs/studies/s1/S1_PARTA.csv
   scoreA   the checks A1-A4          -> runs/studies/s1/S1_PARTA_CHECKS.csv
+  partB_gpu    on the GPUs (--gpus N): for every teacher at p = 4-12 and n = 300 ... 30,000
+               labelled rows (80% train, 20% validation; test = rows 30,000-39,999):
+                 the open-book reference (logistic regression on the teacher's own map features),
+                 fixed bases + logistic regression (Hermite polynomials, Fourier, random Fourier),
+                 neural networks (width x depth grid)
+                                     -> runs/studies/s1/partB/{ref,basis,mlp}_*.csv
+  partB_trees  on CPU (--workers M): gradient-boosted trees (leaves x rounds grid)
+                                     -> runs/studies/s1/partB/gbt_*.csv
+               (the two can run at the same time: N + M <= 31)
+  scoreB   each learner family picks its size on validation rows; the checks B0-B4
+                                     -> runs/studies/s1/S1_PARTB.csv, S1_PARTB_CHECKS.csv
+  --smoke  (partB_gpu / partB_trees) a tiny version at p = 4 written to runs/studies/s1_smoke/,
+           to check the code end to end on the server; it prints timings only, no AUCs
 
 Usage (from the repo root; see the chat for the copy-paste block):
   python studies/s1_scaling/run.py banks    --ps 2,3,4,5,6,8,10,12 --gpus 2 --cpu-workers 29
   python studies/s1_scaling/run.py teachers --workers 31
   python studies/s1_scaling/run.py partA    --workers 8
   python studies/s1_scaling/run.py scoreA
+  python studies/s1_scaling/run.py partB_gpu   --gpus 2
+  python studies/s1_scaling/run.py partB_trees --workers 29
+  python studies/s1_scaling/run.py scoreB
 """
 
 from __future__ import annotations
@@ -70,6 +86,29 @@ DESIGN = {
     "primary_degree": 3,
     "secondary_degree": 4,
     "n_boot": 2000,
+}
+# Part B (PLAN.md, Amendment 1).  Fixed before Part B's code ran on any real data.
+PARTB = {
+    "ps": [4, 5, 6, 8, 10, 12],                  # = Part A's fit_ps
+    "n_grid": [300, 1_000, 3_000, 10_000, 30_000],   # labelled rows: first n rows of the training pool
+    "val_frac": 0.2,                             # last 20% of the n rows: validation (size, penalty, stopping)
+    "lams": [1.0, 1e-1, 1e-2, 1e-3, 1e-4, 1e-5], # L2 penalties for every logistic regression
+    "fourier_mults": [1, 4, 16, 64, 256],        # Fourier and random-Fourier sizes D = p x mult
+    "mlp_widths": [16, 64, 256, 1024],
+    "mlp_depths": [2, 3, 4],                     # hidden layers
+    "mlp": dict(lr=1e-3, batch=512, eval_every=50, patience=40, max_steps=20_000),
+    "gbt_leaves": [8, 31, 127],
+    "gbt_rounds": [100, 300, 1_000, 3_000],
+    "gbt_lr": 0.1,
+    "gbt_chunk": 33,                             # teachers per tree job
+    "gets_there": 0.01,                          # AUC within 0.01 of the open-book reference
+    "test_n": 30_000,                            # the n at which B0-B3 are tested
+    "test_p": 8,                                 # B2 is tested at p = 8
+}
+SMOKE = {
+    "ps": [4], "n_grid": [300, 1_000], "fourier_mults": [1, 4], "mlp_widths": [16, 64],
+    "mlp_depths": [2], "mlp": dict(lr=1e-3, batch=512, eval_every=25, patience=4, max_steps=300),
+    "gbt_leaves": [8], "gbt_rounds": [10, 30], "gbt_chunk": 50, "max_degree_B": 2,
 }
 BANKS = Path("runs/studies/banks/alltoall")
 OUT = Path("runs/studies/s1")
@@ -463,10 +502,376 @@ def do_scoreA():
 
 
 # ---------------------------------------------------------------------------
+# Part B: classical learners by size and by number of labelled rows
+# ---------------------------------------------------------------------------
+
+def partB_cfg(smoke=False):
+    cfg = dict(PARTB)
+    if smoke:
+        cfg.update(SMOKE)
+    return cfg
+
+
+def partB_dir(smoke=False):
+    return Path("runs/studies/s1_smoke/partB") if smoke else OUT / "partB"
+
+
+def splits(n, val_frac):
+    """row indices into the pool: train = first (1 - val_frac) n rows, validation = the rest of
+    the first n rows, test = the fixed rows 30,000-39,999.  Nested in n."""
+    k = int(round(n * (1 - val_frac)))
+    ntr = DESIGN["train_rows"]
+    return np.arange(k), np.arange(k, n), np.arange(ntr, ntr + DESIGN["test_rows"])
+
+
+def load_teachers(p):
+    """labels Y (40,000 x M) and names of every teacher at p (written by the `teachers` phase)"""
+    T = np.load(OUT / "teachers" / f"p{p}.npz")
+    return T["Y"].astype(np.float32), [str(x) for x in T["names"]]
+
+
+def basis_sizes(p, cfg):
+    """the fixed bases at p: (family, size label, D)"""
+    out = []
+    top = min(d_max(p), cfg.get("max_degree_B", 99))
+    for d in range(1, top + 1):
+        out.append(("poly", f"d{d}", comb(p + d, d) - 1))
+    for m in cfg["fourier_mults"]:
+        out.append(("fourier", f"D{p * m}", p * m))
+        out.append(("rff", f"D{p * m}", p * m))
+    return out
+
+
+def basis_matrix(Z, family, D, p):
+    """features of the inputs Z for one fixed basis (label-free)"""
+    if family == "poly":
+        d = next(d for d in range(1, 40) if comb(p + d, d) - 1 == D)
+        return hermite_design(Z, d)[:, 1:]                       # drop the constant (intercept is separate)
+    if family == "fourier":
+        from aqfm_prescreen.dictionaries import balanced_fourier
+        return balanced_fourier(Z, D)
+    if family == "rff":
+        from sklearn.kernel_approximation import RBFSampler
+        return RBFSampler(gamma=1.0 / p, n_components=D, random_state=0).fit(Z).transform(Z)
+    raise ValueError(family)
+
+
+def _rows_out(names, learner, config, size, n, res, extra_key=None):
+    out = []
+    for m, nm in enumerate(names):
+        r = dict(name=nm, learner=learner, config=config, size=size, n=n,
+                 val_loss=float(res["val_loss"][m]), val_auc=float(res["val_auc"][m]),
+                 test_auc=float(res["test_auc"][m]))
+        if extra_key:
+            r[extra_key] = float(np.asarray(res[extra_key])[m])
+        out.append(r)
+    return out
+
+
+def _write(f, rows):
+    f.parent.mkdir(parents=True, exist_ok=True)
+    tmp = f.with_name(f.name + ".tmp.csv")
+    pd.DataFrame(rows).to_csv(tmp, index=False)
+    tmp.replace(f)
+
+
+def gpu_partB_job(args):
+    """one GPU job: (kind, p, ...) for every n of the grid; each n is one output file, skipped if
+    it exists (restartable)"""
+    what, p, spec, smoke = args
+    cfg, out = partB_cfg(smoke), partB_dir(smoke)
+    import torch                                                  # only GPU workers import torch
+    from studies.common import torchlearn as tl
+    torch.set_num_threads(1)                                      # one CPU thread per GPU worker
+    dev = os.environ.get(bs.TORCH_ENV, "cpu")
+    t0 = time.time()
+    if what == "mlp":
+        w, dep = spec
+        files = {n: out / f"mlp_p{p}_w{w}_d{dep}_n{n}.csv" for n in cfg["n_grid"]}
+    elif what == "basis":
+        fam, lab, D = spec
+        files = {n: out / f"basis_p{p}_{fam}_{lab}_n{n}.csv" for n in cfg["n_grid"]}
+    else:
+        files = {n: out / f"ref_p{p}_n{n}.csv" for n in cfg["n_grid"]}
+    todo = [n for n, f in files.items() if not f.exists()]
+    label = f"{what} p{p} {spec}"
+    if not todo:
+        return "skip", label
+    Y, names = load_teachers(p)
+    Z = bs.pool_inputs(p)[:n_rows()]
+    torch.backends.cuda.matmul.allow_tf32 = what == "mlp"         # TF32 matmuls for networks only;
+    torch.backends.cudnn.allow_tf32 = what == "mlp"               # logistic regressions stay full fp32
+    if what == "basis":
+        Xall = basis_matrix(Z, fam, D, p).astype(np.float32)
+    for n in todo:
+        tr, va, te = splits(n, cfg["val_frac"])
+        if what == "mlp":
+            res = tl.train_mlps(Z[tr], Y[tr], Z[va], Y[va], Z[te], Y[te], w, dep, dev,
+                                seed=_seed(f"s1b_mlp_p{p}_w{w}_d{dep}_n{n}"), **cfg["mlp"])
+            rows = _rows_out(names, "mlp", f"w{w}_d{dep}", res["params"], n, res, "best_step")
+        elif what == "basis":
+            res = tl.logreg_path(Xall[tr], Y[tr], Xall[va], Y[va], Xall[te], Y[te], cfg["lams"], dev)
+            rows = _rows_out(names, fam, lab, D, n, res, "lam")
+        else:
+            rows = []
+            specs = teacher_specs(p)
+            for key in bank_keys(p):
+                idx = [k for k, t in enumerate(specs) if (t["kind"], t["c"], t["tau"]) == key]
+                B = bs.load_rows(BANKS, p, *key, DESIGN["n_blocks"])
+                X = family_matrix(B, "XYZ", p).astype(np.float32)
+                res = tl.logreg_path(X[tr], Y[tr][:, idx], X[va], Y[va][:, idx], X[te], Y[te][:, idx],
+                                     cfg["lams"], dev)
+                rows += _rows_out([names[k] for k in idx], "ref", "own_XYZ", X.shape[1], n, res, "lam")
+        _write(files[n], rows)
+    return f"ok {time.time() - t0:.0f}s", label
+
+
+def _gpu_partB_jobs(cfg, smoke):
+    jobs = []
+    for p in cfg["ps"]:
+        jobs.append(("ref", p, None, smoke))
+        for b in basis_sizes(p, cfg):
+            jobs.append(("basis", p, b, smoke))
+        for w in cfg["mlp_widths"]:
+            for dep in cfg["mlp_depths"]:
+                jobs.append(("mlp", p, (w, dep), smoke))
+    cost = lambda j: (j[2][0] ** 2 * j[2][1] if j[0] == "mlp" else (j[2][2] if j[0] == "basis" else 1))
+    jobs.sort(key=lambda j: -cost(j))                              # biggest first
+    return jobs
+
+
+def do_partB_gpu(gpus, smoke):
+    if gpus < 1 or gpus > 31:
+        raise SystemExit("STOP: --gpus must be 1-31")
+    cfg = partB_cfg(smoke)
+    jobs = _gpu_partB_jobs(cfg, smoke)
+    print(f"{len(jobs)} GPU jobs on {gpus} GPU(s), p = {cfg['ps']}, n = {cfg['n_grid']}", flush=True)
+    ctx = mp.get_context("spawn")
+    idq = ctx.Queue()
+    for i in range(gpus):
+        idq.put(i)
+    t0, fails = time.time(), 0
+    with ProcessPoolExecutor(gpus, mp_context=ctx, initializer=_gpu_init, initargs=(idq,)) as ex:
+        futs = {ex.submit(gpu_partB_job, j): j for j in jobs}
+        for k, fu in enumerate(as_completed(futs), 1):
+            try:
+                st, nm = fu.result()
+                print(f"[{k}/{len(jobs)} {time.time() - t0:6.0f}s] {st} {nm}", flush=True)
+            except Exception:
+                fails += 1
+                print(f"[{k}/{len(jobs)}] FAILED {futs[fu][:3]}\n{traceback.format_exc()}", flush=True)
+    print(f"done, {fails} failed" + ("; rerun the same command to retry (finished files are skipped)" if fails else ""))
+    if fails:
+        sys.exit(1)
+
+
+def gbt_job(args):
+    """gradient-boosted trees (scikit-learn HistGradientBoosting, one thread) for a chunk of
+    teachers at one (p, n, leaves); one fit of max(rounds) rounds, read out at every rounds value"""
+    p, n, leaves, lo, hi, smoke = args
+    cfg, out = partB_cfg(smoke), partB_dir(smoke)
+    f = out / f"gbt_p{p}_L{leaves}_n{n}_t{lo}-{hi}.csv"
+    label = f"gbt p{p} n{n} L{leaves} teachers {lo}-{hi}"
+    if f.exists():
+        return "skip", label
+    from sklearn.ensemble import HistGradientBoostingClassifier
+    from sklearn.metrics import roc_auc_score
+    t0 = time.time()
+    Y, names = load_teachers(p)
+    Z = bs.pool_inputs(p)[:n_rows()]
+    tr, va, te = splits(n, cfg["val_frac"])
+    rounds = sorted(cfg["gbt_rounds"])
+    Xev = np.vstack([Z[va], Z[te]])
+    rows = []
+    for m in range(lo, min(hi, len(names))):
+        clf = HistGradientBoostingClassifier(max_iter=rounds[-1], max_leaf_nodes=leaves,
+                                             learning_rate=cfg["gbt_lr"], early_stopping=False,
+                                             random_state=0)
+        clf.fit(Z[tr], Y[tr, m].astype(int))
+        yv, yt = Y[va, m], Y[te, m]
+        for r, s in enumerate(clf.staged_decision_function(Xev), 1):
+            if r not in rounds:
+                continue
+            sv, st = s[:len(va)], s[len(va):]
+            vl = float(np.mean(np.logaddexp(0, sv) - yv * sv))       # mean BCE on validation
+            ok_v, ok_t = 0 < yv.sum() < len(yv), 0 < yt.sum() < len(yt)
+            rows.append(dict(name=names[m], learner="gbt", config=f"L{leaves}_R{r}", size=r * leaves,
+                             n=n, val_loss=vl,
+                             val_auc=roc_auc_score(yv, sv) if ok_v else np.nan,
+                             test_auc=roc_auc_score(yt, st) if ok_t else np.nan, rounds=r))
+    _write(f, rows)
+    return f"ok {time.time() - t0:.0f}s", label
+
+
+def do_partB_trees(workers, smoke):
+    cfg = partB_cfg(smoke)
+    jobs = []
+    for p in cfg["ps"]:
+        M = len(teacher_specs(p))
+        for n in cfg["n_grid"]:
+            for L in cfg["gbt_leaves"]:
+                for lo in range(0, M, cfg["gbt_chunk"]):
+                    jobs.append((p, n, L, lo, lo + cfg["gbt_chunk"], smoke))
+    jobs.sort(key=lambda j: -(j[1] * j[2]))                        # biggest first
+    print(f"{len(jobs)} tree jobs on {workers} CPU workers", flush=True)
+    t0, fails = time.time(), 0
+    with ProcessPoolExecutor(workers, mp_context=mp.get_context("fork")) as ex:
+        futs = {ex.submit(gbt_job, j): j for j in jobs}
+        for k, fu in enumerate(as_completed(futs), 1):
+            try:
+                st, nm = fu.result()
+                if st != "skip" and (k % 10 == 0 or k == len(jobs) or smoke):
+                    print(f"[{k}/{len(jobs)} {time.time() - t0:6.0f}s] {st} {nm}", flush=True)
+            except Exception:
+                fails += 1
+                print(f"[{k}/{len(jobs)}] FAILED {futs[fu]}\n{traceback.format_exc()}", flush=True)
+    print(f"done, {fails} failed" + ("; rerun the same command to retry (finished files are skipped)" if fails else ""))
+    if fails:
+        sys.exit(1)
+
+
+# ---------------------------------------------------------------------------
+# Part B scoring
+# ---------------------------------------------------------------------------
+
+FAMILY_GROUPS = {"fixed": ["poly", "fourier", "rff"], "learned": ["mlp", "gbt"]}
+
+
+def pick_by_validation(P, learners):
+    """for each (teacher, n): the row with the lowest validation loss among `learners`"""
+    sub = P[P.learner.isin(learners) & np.isfinite(P.val_loss)]
+    return sub.loc[sub.groupby(["name", "n"]).val_loss.idxmin()]
+
+
+def selected_table(P):
+    """one row per (teacher, n, choice): the reference, each family, and the two groups, each
+    picked on validation; with the reference's test AUC and the shortfall"""
+    ref = P[P.learner == "ref"][["name", "n", "test_auc"]].rename(columns={"test_auc": "ref_auc"})
+    parts = []
+    choices = {f: [f] for f in sorted(set(P.learner) - {"ref"})}
+    choices.update({g: fs for g, fs in FAMILY_GROUPS.items() if set(fs) & set(P.learner)})
+    for ch, fs in choices.items():
+        s = pick_by_validation(P, fs)[["name", "n", "learner", "config", "size", "test_auc"]]
+        s.insert(0, "choice", ch)
+        parts.append(s)
+    S = pd.concat(parts).merge(ref, on=["name", "n"])
+    S["shortfall"] = S.ref_auc - S.test_auc
+    S["recovery"] = (S.test_auc - 0.5) / (S.ref_auc - 0.5)
+    return S
+
+
+def cell_shortfall(S, choice, n, p, kind, region=None, cell=None):
+    """median shortfall over seeds, per cell (c, tau)"""
+    q = S[(S.choice == choice) & (S.n == n) & (S.p == p) & (S.kind == kind)]
+    if region is not None:
+        q = q[q.region == region]
+    if cell is not None:
+        q = q[(q.c == cell[0]) & (q.tau == cell[1])]
+    return q.groupby(["c", "tau"]).shortfall.median()
+
+
+def checks_partB(S, cfg=PARTB):
+    tol, n, ps = cfg["gets_there"], cfg["test_n"], cfg["ps"]
+    rows = []
+    # B0 (sanity): learned models get there in the short-anneal control, exact teachers, every p
+    v = {p: cell_shortfall(S, "learned", n, p, "Q", cell=(4.0, 1.0)) for p in ps}
+    worst = max(float(x.max()) for x in v.values())
+    rows.append(("B0", "sanity: learned models get there in the short-anneal control (c=4, tau=1), exact "
+                 "teachers, every p", f"largest shortfall {worst:.3f}", worst <= tol))
+    # B1: fixed bases short by more than tol in >= 9 of 12 window cells at every p
+    cnt = {p: int((cell_shortfall(S, "fixed", n, p, "Q", region="window") > tol).sum()) for p in ps}
+    rows.append(("B1", "fixed bases short by > 0.01 in >= 9 of 12 window cells (exact), every p",
+                 "; ".join(f"p{p}: {c}/12" for p, c in cnt.items()), min(cnt.values()) >= 9))
+    # B2: at p = 8, learned beats fixed in >= 9 of 12 window cells, and gets there in <= 5
+    tp = cfg["test_p"]
+    lf = cell_shortfall(S, "learned", n, tp, "Q", region="window")
+    ff = cell_shortfall(S, "fixed", n, tp, "Q", region="window")
+    better = int((lf < ff).sum())
+    there = int((lf <= tol).sum())
+    rows.append(("B2", f"p = {tp}: learned smaller shortfall than fixed in >= 9 of 12 window cells AND gets "
+                 "there in <= 5 of 12", f"better in {better}/12; gets there in {there}/12",
+                 better >= 9 and there <= 5))
+    # B3: growth with p (exact window slope > 0) and not quantum-specific (exact - MF contains 0)
+    q = S[(S.choice == "learned") & (S.n == n) & (S.region == "window") & S.p.isin(ps)]
+    U = []
+    for key, g in q.groupby(["kind", "c", "tau", "seed"]):
+        if g.p.nunique() >= 3:
+            U.append(dict(kind=key[0], slope=float(np.polyfit(g.p, g.shortfall, 1)[0])))
+    U = pd.DataFrame(U)
+    rng = np.random.default_rng(_seed("s1_scoreB"))
+    nb = DESIGN["n_boot"]
+    bq = _boot_median(U[U.kind == "Q"].slope, rng, nb)
+    bm = _boot_median(U[U.kind == "MF"].slope, rng, nb)
+    mq, mm = float(U[U.kind == "Q"].slope.median()), float(U[U.kind == "MF"].slope.median())
+    lo, hi = _ci(bq)
+    rows.append(("B3a", "growth: median slope of the learned shortfall against p (exact, window) > 0",
+                 f"{mq:.4f} [{lo:.4f}, {hi:.4f}] per qubit", lo > 0))
+    lo, hi = _ci(bq - bm)
+    rows.append(("B3b", "not quantum-specific: exact minus mean-field slope (window), interval contains 0",
+                 f"{mq - mm:.4f} [{lo:.4f}, {hi:.4f}]", lo <= 0 <= hi))
+    return pd.DataFrame(rows, columns=["check", "what", "value", "held"])
+
+
+def n_star(S, choice, tol):
+    """smallest n at which a teacher's `choice` gets there (inf if never)"""
+    out = []
+    for nm, g in S[S.choice == choice].groupby("name"):
+        ok = g[g.shortfall <= tol].n
+        out.append(dict(name=nm, n_star=float(ok.min()) if len(ok) else np.inf))
+    return pd.DataFrame(out)
+
+
+def do_scoreB():
+    cfg = PARTB
+    files = sorted(partB_dir().glob("*.csv"))
+    if not files:
+        raise SystemExit("STOP: no Part B files found")
+    P = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    M = pd.read_csv(OUT / "S1_TEACHERS.csv")
+    S = selected_table(P).merge(M[["name", "p", "kind", "c", "tau", "seed", "region"]], on="name")
+    S.to_csv(OUT / "S1_PARTB.csv", index=False)
+    pd.set_option("display.width", 220)
+    pd.set_option("display.max_columns", 40)
+    S["group"] = S.kind + ", " + np.where(S.region == "window", "window", S.region)
+    n = cfg["test_n"]
+    print(f"\nmedian shortfall (reference AUC minus learner AUC; 0 = matches the open-book student), "
+          f"n = {n}, each family's size picked on validation:")
+    for ch in ["fixed", "learned", "poly", "fourier", "rff", "mlp", "gbt"]:
+        t = S[(S.choice == ch) & (S.n == n)].groupby(["group", "p"]).shortfall.median().unstack("p")
+        if len(t):
+            print(f"\n{ch}:")
+            print(t.to_string(float_format=lambda v: f"{v:.3f}"))
+    print("\nmedian shortfall of the best learned model by n (exact, window):")
+    t = S[(S.choice == "learned") & (S.kind == "Q") & (S.region == "window")].groupby(["n", "p"]).shortfall.median().unstack("p")
+    print(t.to_string(float_format=lambda v: f"{v:.3f}"))
+    print("\nreference (open-book) test AUC, median, by n (exact, window):")
+    t = S[(S.choice == "learned") & (S.kind == "Q") & (S.region == "window")].groupby(["n", "p"]).ref_auc.median().unstack("p")
+    print(t.to_string(float_format=lambda v: f"{v:.3f}"))
+    print("\nwhich learned family is picked (share of teachers), n = 30,000:")
+    t = S[(S.choice == "learned") & (S.n == n)].groupby(["group", "learner"]).size().unstack(fill_value=0)
+    print(t.to_string())
+    N = n_star(S, "learned", cfg["gets_there"]).merge(M[["name", "p", "kind", "region"]], on="name")
+    N["group"] = N.kind + ", " + np.where(N.region == "window", "window", N.region)
+    print("\nB4 (reported): n* = smallest n at which the best learned model gets there (median; inf = never "
+          f"up to {max(cfg['n_grid'])}); share of teachers that get there at some n:")
+    t = N.groupby(["group", "p"]).n_star.median().unstack("p")
+    print(t.to_string(float_format=lambda v: f"{v:.0f}"))
+    t = N.assign(ok=np.isfinite(N.n_star)).groupby(["group", "p"]).ok.mean().unstack("p")
+    print(t.to_string(float_format=lambda v: f"{v:.2f}"))
+    K = checks_partB(S, cfg)
+    K.to_csv(OUT / "S1_PARTB_CHECKS.csv", index=False)
+    print(f"\n=== Part B checks (n = {n}) ===")
+    print(K.to_string(index=False))
+    print(f"\nwrote {OUT / 'S1_PARTB.csv'} and {OUT / 'S1_PARTB_CHECKS.csv'}")
+
+
+# ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("phase", choices=["banks", "teachers", "partA", "scoreA"])
+    ap.add_argument("phase", choices=["banks", "teachers", "partA", "scoreA",
+                                      "partB_gpu", "partB_trees", "scoreB"])
+    ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--ps", default=",".join(map(str, DESIGN["ps"])))
     ap.add_argument("--gpus", type=int, default=0)
     ap.add_argument("--cpu-workers", type=int, default=29)
@@ -482,8 +887,14 @@ def main():
         do_teachers(ps, a.workers)
     elif a.phase == "partA":
         do_partA(ps, a.workers)
-    else:
+    elif a.phase == "scoreA":
         do_scoreA()
+    elif a.phase == "partB_gpu":
+        do_partB_gpu(a.gpus, a.smoke)
+    elif a.phase == "partB_trees":
+        do_partB_trees(a.workers, a.smoke)
+    else:
+        do_scoreB()
 
 
 if __name__ == "__main__":
