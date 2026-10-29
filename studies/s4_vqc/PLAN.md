@@ -26,9 +26,9 @@ readout as the map.
 
 - **(a) does about as well as classical models, not better.**
   - With inputs encoded once, a circuit can only make low-frequency functions of each input
-    (Schuld et al. 2021), and the window labels oscillate.
+    (Schuld et al. 2021 [1]), and the window labels oscillate.
   - Re-encoding helps, but such models are often matched by random Fourier features (Landman
-    et al. 2022; Sweke et al. 2025).
+    et al. 2023 [2]; Sweke et al. 2025 [3]).
 - **(b) reaches near parity with a few dozen parameters.** That would say the advantage comes
   from the *right physics*, not from "being quantum".
 
@@ -43,3 +43,9 @@ Either outcome is useful. The one that would change the story is (a) reaching pa
 - Simulation by statevector with automatic gradients (PyTorch), on GPU if available.
 - **Open:** circuit depth and layer counts, optimizer and training budget. Also how to keep the
   comparison fair: same tuning budget and validation split as the classical models.
+
+## References
+
+1. Schuld, M., Sweke, R. & Meyer, J. J. (2021). Effect of data encoding on the expressive power of variational quantum machine-learning models. *Physical Review A* 103, 032430. [arXiv:2008.08605](https://arxiv.org/abs/2008.08605)
+2. Landman, J., Thabet, S., Dalyac, C., Mhiri, H. & Kashefi, E. (2023). Classically approximating variational quantum machine learning with random Fourier features. *ICLR 2023*. [arXiv:2210.13200](https://arxiv.org/abs/2210.13200)
+3. Sweke, R., Recio-Armengol, E., Jerbi, S., Gil-Fuster, E., Fuller, B., Eisert, J. & Meyer, J. J. (2025). Potential and limitations of random Fourier features for dequantizing quantum machine learning. *Quantum* 9, 1640. [arXiv:2309.11647](https://arxiv.org/abs/2309.11647)

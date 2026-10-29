@@ -57,6 +57,16 @@ mean-field's, not *harder to learn*.
 - Geometry G7/G8 redesigns.
 - The real-data search for labels that use the window.
 
+## Key references
+
+1. Huang, H.-Y., Broughton, M., Mohseni, M., Babbush, R., Boixo, S., Neven, H. & McClean, J. R. (2021). Power of data in quantum machine learning. *Nature Communications* 12, 2631. [arXiv:2011.01938](https://arxiv.org/abs/2011.01938)
+2. Schachenmayer, J., Pikovski, A. & Rey, A. M. (2015). Many-body quantum spin dynamics with Monte Carlo trajectories on a discrete phase space. *Physical Review X* 5, 011022. [arXiv:1408.4441](https://arxiv.org/abs/1408.4441)
+3. Schuld, M., Sweke, R. & Meyer, J. J. (2021). Effect of data encoding on the expressive power of variational quantum machine-learning models. *Physical Review A* 103, 032430. [arXiv:2008.08605](https://arxiv.org/abs/2008.08605)
+4. Landman, J., Thabet, S., Dalyac, C., Mhiri, H. & Kashefi, E. (2023). Classically approximating variational quantum machine learning with random Fourier features. *ICLR 2023*. [arXiv:2210.13200](https://arxiv.org/abs/2210.13200)
+5. Sweke, R., Recio-Armengol, E., Jerbi, S., Gil-Fuster, E., Fuller, B., Eisert, J. & Meyer, J. J. (2025). Potential and limitations of random Fourier features for dequantizing quantum machine learning. *Quantum* 9, 1640. [arXiv:2309.11647](https://arxiv.org/abs/2309.11647)
+
+*Each write-up lists its own references in full. Two physics statements in S2 still need sources (see `studies/s2_meanfield/RESULTS.md`).*
+
 ## Limits to keep in view
 
 - **Home court.** The labels come from the map, so the claim is "generic learners can't learn

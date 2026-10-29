@@ -136,3 +136,11 @@ reason D2 is a real bet.
 - **No learners.** That's S1.
 - **No other couplings.** That's S3.
 - **The range is p ≤ 12–14.** Exponents describe that range only.
+
+## References
+
+1. Schachenmayer, J., Pikovski, A. & Rey, A. M. (2015). Many-body quantum spin dynamics with Monte Carlo trajectories on a discrete phase space. *Physical Review X* 5, 011022. [arXiv:1408.4441](https://arxiv.org/abs/1408.4441)
+2. Polkovnikov, A. (2010). Phase space representation of quantum dynamics. *Annals of Physics* 325, 1790. [doi:10.1016/j.aop.2010.02.006](https://doi.org/10.1016/j.aop.2010.02.006)
+3. Khasseh, R., Russomanno, A., Schmitt, M., Heyl, M. & Fazio, R. (2020). Discrete truncated Wigner approach to dynamical phase transitions in Ising models after a quantum quench. *Physical Review B* 102, 014303. [arXiv:2004.09812](https://arxiv.org/abs/2004.09812)
+4. Kunimi, M., Nagao, K., Goto, S. & Danshita, I. (2021). Performance evaluation of the discrete truncated Wigner approximation for quench dynamics of quantum spin systems with long-range interactions. [arXiv:2008.13481](https://arxiv.org/abs/2008.13481)
+5. Sels, D. (2026). Truncated Wigner dynamics of biclique quantum spin glasses. Preprint, not yet peer-reviewed. [arXiv:2606.20187](https://arxiv.org/abs/2606.20187)

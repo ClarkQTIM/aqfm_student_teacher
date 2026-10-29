@@ -46,6 +46,17 @@ evidence that a quantum *computer* is needed: up to 16 qubits we simulate it cla
 *Figures: `figures.py`, from `S2_MEASURES.csv` / `S2_AMEND.csv` (or the median tables in
 `runs/s2_p16.log` and `runs/s2_amend.log`, which is what these were made from).*
 
+### References
+
+**None yet for this study's physics claims.** Two statements here rest on standard reasoning,
+not on a cited source, and need references before any write-up:
+1. "With all-to-all coupling J = c/(p−1), mean-field becomes exact as p grows."
+2. "Mean-field's accuracy time near an unstable trajectory may grow only like log p"
+   (Details, Section 4).
+
+The stronger classical twin that follows from this study (S5, DTWA) is referenced in
+`studies/s5_twin/PLAN.md`.
+
 ---
 
 ## Details

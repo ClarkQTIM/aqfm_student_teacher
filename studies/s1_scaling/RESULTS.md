@@ -10,15 +10,15 @@ fixed before any Part B learner ran). Logs: `runs/s1_partA.log`, `runs/s1_partB.
 
 **What we asked.** Part A showed polynomials can't copy the map's labels in the window. But
 polynomials are a weak opponent. So we tried the strongest generic classical learners we have:
-neural networks (12 shapes, up to 3 million parameters) and gradient-boosted trees (12
-settings), from 300 to 30,000 labelled examples, at 4 to 12 qubits. Each learner picked its own
+neural networks [1, 2] (12 shapes, up to 3 million parameters) and gradient-boosted trees
+[3, 4, 5] (12 settings), from 300 to 30,000 labelled examples, at 4 to 12 qubits. Each learner picked its own
 size on held-out validation rows, as a practitioner would. The yardstick is the "open-book"
 student, a simple linear model on the map's own outputs.
 
 **What we found.**
 
 - **Even the flexible learners don't get there in the window.** They beat the fixed bases
-  (polynomials, Fourier, random Fourier features) clearly, but rarely match the open-book
+  (polynomials, Fourier, random Fourier features [6]) clearly, but rarely match the open-book
   student. With exact-map labels, they get within 0.01 AUC on 14% of teachers at 4 qubits, and
   on none at 10–12 qubits. On the easy short-anneal control, they get there every time.
 - **It gets somewhat harder with more qubits.** For exact-map labels the median gap grows from
@@ -69,6 +69,18 @@ The quantum part makes the exact map's labels *different* from mean-field's, not
 - **30,000 examples is the most we tried.** The gap is still shrinking there.
 - **One family of opponents.** Generic learners that don't know the physics. A learner given
   mean-field's outputs as features is S2's question, not this one.
+
+### References
+
+1. Paszke, A. et al. (2019). PyTorch: an imperative style, high-performance deep learning library. *Advances in Neural Information Processing Systems* 32 (NeurIPS 2019).
+2. Kingma, D. P. & Ba, J. (2015). Adam: a method for stochastic optimization. *ICLR 2015*. [arXiv:1412.6980](https://arxiv.org/abs/1412.6980)
+3. Friedman, J. H. (2001). Greedy function approximation: a gradient boosting machine. *Annals of Statistics* 29(5), 1189–1232.
+4. Ke, G. et al. (2017). LightGBM: a highly efficient gradient boosting decision tree. *Advances in Neural Information Processing Systems* 30 (NeurIPS 2017). (The histogram method behind scikit-learn's HistGradientBoosting.)
+5. Pedregosa, F. et al. (2011). Scikit-learn: machine learning in Python. *Journal of Machine Learning Research* 12, 2825–2830.
+6. Rahimi, A. & Recht, B. (2007). Random features for large-scale kernel machines. *Advances in Neural Information Processing Systems* 20 (NeurIPS 2007).
+
+*[1]–[5] are the tools used; [6] is the random-feature method. The finding itself (generic learners
+fall short, more so for mean-field labels) has no prior reference: it's ours.*
 
 ## Part A in plain language: how complicated are the labels?
 

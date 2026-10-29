@@ -12,7 +12,7 @@ cores.*
 mean-field twin. A reviewer's first question would be whether that window is real, or an
 artefact of the opponents we picked. So we checked it a completely different way.
 
-**How.** Huang et al. (2021) give a quantity, the geometric difference g, that needs no labels
+**How.** Huang et al. (2021) [1] give a quantity, the geometric difference g, that needs no labels
 and no training. You run two models on the same inputs and ask how differently they arrange
 them: which inputs end up close together and which far apart. If two models arrange the inputs
 almost alike, no labelling can favour one over the other by much. If they arrange them very
@@ -50,6 +50,12 @@ al.
   mean-field doesn't catch up up to 16 qubits.
 
 *Figure: `docs/geometry_figures.py`, from `runs/tau_sweep/geometry/GEO_TT.csv`.*
+
+### References
+
+1. Huang, H.-Y., Broughton, M., Mohseni, M., Babbush, R., Boixo, S., Neven, H. & McClean, J. R. (2021). Power of data in quantum machine learning. *Nature Communications* 12, 2631. [arXiv:2011.01938](https://arxiv.org/abs/2011.01938)
+
+*Our regularized formula for g is our own derivation from [1]'s argument; [1]'s supplement has its own regularized version, which we still need to compare against.*
 
 ---
 
