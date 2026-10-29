@@ -137,6 +137,27 @@ reason D2 is a real bet.
 - **No other couplings.** That's S3.
 - **The range is p ≤ 12–14.** Exponents describe that range only.
 
+## 8. Changes made while writing the code (before any run on real data)
+
+- **CPU, not GPU (Section 6).** The NumPy integrator turned out fast enough: about 16 minutes
+  for one 12-qubit cell at τ = 20 with M = 1,024 on one core. That's roughly 15–30 minutes for
+  everything on 31 cores, so there's no PyTorch version.
+- **Qubits:** S2's full list, p ∈ {2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16}. S2's exact banks exist
+  for all of them. p = 14 and 16 are included if `time` shows they're affordable. D2 is still
+  tested at p = 12.
+- **The M/4 check uses the first quarter of the same trajectories** (nested), so the two values
+  differ only by sampling. Cells with every starting point enumerated (4^p ≤ M) have no sampling
+  noise and are never flagged.
+- **No prediction changed.**
+
+**Disclosure.** While checking the code, I compared DTWA with the exact map on 20 random inputs
+(not the study's pool) at p = 4, c = 4, τ = 10, a window-like setting. DTWA's RMS error on the
+single-qubit readouts was 0.10, against mean-field's 0.42. That look came after the predictions
+were committed and pushed (e65eada), and they are unchanged.
+
+**Code:** `studies/common/dtwa.py` (the method), `studies/s5_twin/run.py` (phases `time`, `banks`,
+`measure`, `score`). Tests: `tests/test_studies_s5.py`. Outputs: `runs/studies/s5/`.
+
 ## References
 
 1. Schachenmayer, J., Pikovski, A. & Rey, A. M. (2015). Many-body quantum spin dynamics with Monte Carlo trajectories on a discrete phase space. *Physical Review X* 5, 011022. [arXiv:1408.4441](https://arxiv.org/abs/1408.4441)
