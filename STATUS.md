@@ -6,6 +6,26 @@
 (AQFM) gives labels that classical methods can't learn, and is that because of the quantum
 part?
 
+## The two questions (how every result below fits together)
+
+| Question | Answer in the window | Quantum? | Results |
+|---|---|---|---|
+| **A. Can a generic classical learner learn these labels from examples?** | **No**, for exact-map labels *and* mean-field labels; mean-field's are even harder | **No.** Mean-field is classical and shares the difficulty, so it comes from the coupled anneal dynamics. | 4, 5 (also geometry G5) |
+| **B. Can mean-field, the cheap classical twin, reproduce what the exact map does?** | **No.** It misses about 80% of the exact map's labels, at every size up to 16 qubits | **Yes.** The only thing mean-field leaves out is the quantum correlations. | 1, 2, 3 |
+
+**In one sentence:** both kinds of label are hard for classical learners, but only the exact map
+does something its classical twin can't copy. The quantum part makes the labels *different* from
+mean-field's, not *harder to learn*.
+
+**Expected vs surprising.**
+- **Expected, and found:** the window (1), the geometry (2), fixed bases failing, and networks or
+  trees doing better but still falling short (5).
+- **Surprises:**
+  - mean-field never catches up (3), where we predicted slow convergence;
+  - polynomial difficulty doesn't grow with qubits (4);
+  - mean-field labels are harder for learners than exact ones (5), where we predicted they'd
+    be about equal.
+
 ## Done
 
 | | Finding | Where |
@@ -20,8 +40,8 @@ part?
 
 | | What | Why | Status |
 |---|---|---|---|
-| 1 | **Robustness check for the networks** (longer training, two learning rates; p = 8) | Rules out "the networks were undertrained" | plan fixed (`studies/s1_scaling/PLAN.md` §10); **run 2026-10-29** |
-| 2 | **One stronger classical approximation** than mean-field (pair or cluster corrections) | A reviewer will ask whether mean-field was too weak a twin | not started |
+| 1 | **Robustness check for the networks** (longer training, two learning rates; p = 8) | Rules out "the networks were undertrained" (question A) | plan fixed (`studies/s1_scaling/PLAN.md` §10); **run 2026-10-29** |
+| 2 | **One stronger classical twin** than mean-field (pair or cluster corrections) | The quantum claim rests on question B, so a reviewer will ask whether mean-field was just too weak a twin | not started |
 
 ## Next paper
 

@@ -36,8 +36,12 @@ lower means mean-field is closer to exact.
 **What it means.** The window isn't a small-system artifact, at least up to 16 qubits, the largest
 we can simulate. Inside it, the exact map does something its cheap classical twin can't, at every
 size we tested. That's the strongest "quantum part" evidence in the project so far. It isn't yet
-evidence that a quantum *computer* is needed: up to 16 qubits we simulate it classically, and other
-classical methods besides mean-field (neural networks, better approximations) remain to be tested.
+evidence that a quantum *computer* is needed: up to 16 qubits we simulate it classically.
+- **Neural networks and boosted trees** trained on the inputs (S1 Part B) can't learn these labels
+  either. But they can't learn mean-field's labels either, so that difficulty isn't quantum.
+- **This study answers a different question:** whether the classical twin can reproduce the
+  exact map. That's where the quantum part shows up.
+- **Still to test:** a stronger classical twin than mean-field (pair corrections).
 
 *Figures: `figures.py`, from `S2_MEASURES.csv` / `S2_AMEND.csv` (or the median tables in
 `runs/s2_p16.log` and `runs/s2_amend.log`, which is what these were made from).*

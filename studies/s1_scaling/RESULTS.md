@@ -49,6 +49,16 @@ student, a simple linear model on the map's own outputs.
 
 So the quantum claim rests on S2's exact-versus-mean-field gap, not on "classical learners fail".
 
+The two results answer different questions. That's why some of our findings sound "quantum"
+and others don't:
+
+| Question | Answer in the window | Quantum? |
+|---|---|---|
+| **A. Can a generic classical learner learn these labels from examples?** (S1 Parts A and B) | No, for exact-map *and* mean-field labels; mean-field's are harder | **No.** Mean-field shares it. |
+| **B. Can mean-field reproduce what the exact map does?** (S2) | No: it misses about 80%, up to 16 qubits | **Yes.** Only the quantum correlations differ. |
+
+The quantum part makes the exact map's labels *different* from mean-field's, not *harder to learn*.
+
 **What to be careful about.**
 - **Networks might be undertrained on the hardest labels.** At 10–12 qubits validation often
   picks the *smallest* network for mean-field labels. On some teachers every learner, trees and
