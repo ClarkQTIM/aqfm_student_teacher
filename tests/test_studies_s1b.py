@@ -147,3 +147,36 @@ def test_scoreB_end_to_end_on_fake_files(tmp_path, monkeypatch, capsys):
     K = pd.read_csv(out / "S1_PARTB_CHECKS.csv")
     assert list(K.check) == ["B0", "B1", "B2", "B3a", "B3b"]
     assert "Part B checks" in capsys.readouterr().out
+
+
+def test_scoreB_long_end_to_end_on_fake_files(tmp_path, monkeypatch, capsys):
+    """long-trained networks that are better on validation (and test) for 2 of every 3 teachers
+    must lower the 'learned_long' median shortfall; R1/R2 are computed on the p = 8 cells"""
+    out = tmp_path / "s1"
+    (out / "partB").mkdir(parents=True)
+    (out / "partB_long").mkdir(parents=True)
+    monkeypatch.setattr(S1, "OUT", out)
+    monkeypatch.setattr(S1, "partB_dir", lambda smoke=False: out / "partB")
+    monkeypatch.setattr(S1, "long_dir", lambda smoke=False: out / "partB_long")
+    M = pd.DataFrame(S1.teacher_specs(8))
+    M.to_csv(out / "S1_TEACHERS.csv", index=False)
+    P, L = [], []
+    for k, nm in enumerate(M.name):
+        P.append(dict(name=nm, learner="ref", config="own_XYZ", size=24, n=30_000, val_loss=0.3, val_auc=0.95, test_auc=0.95))
+        P.append(dict(name=nm, learner="mlp", config="w16_d2", size=10, n=30_000, val_loss=0.5, val_auc=0.85, test_auc=0.85))
+        P.append(dict(name=nm, learner="gbt", config="L8_R100", size=800, n=30_000, val_loss=0.55, val_auc=0.8, test_auc=0.8))
+        good = k % 3 != 0
+        L.append(dict(name=nm, learner="mlp_long", config="w64_d3_lr0.001", size=99, n=30_000,
+                      val_loss=0.35 if good else 0.6, val_auc=0.9, test_auc=0.945 if good else 0.7,
+                      best_step=5000, steps=12_000))
+    pd.DataFrame(P).to_csv(out / "partB" / "fake_p8_x_n30000.csv", index=False)
+    pd.DataFrame(L).to_csv(out / "partB_long" / "fake.csv", index=False)
+    S1.do_scoreB_long()
+    K = pd.read_csv(out / "S1_PARTB_LONG_CHECKS.csv").set_index("check")
+    assert list(K.index) == ["R1", "R2"]
+    S = pd.read_csv(out / "S1_PARTB_LONG.csv")
+    lb = S[S.choice == "learned"].shortfall.median()
+    la = S[S.choice == "learned_long"].shortfall.median()
+    assert np.isclose(lb, 0.10) and np.isclose(la, 0.005)
+    assert not bool(K.loc["R1", "held"])                     # a drop of 0.095 > 0.02
+    assert "robustness checks" in capsys.readouterr().out

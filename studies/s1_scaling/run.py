@@ -29,7 +29,12 @@ Phases
                (the two can run at the same time: N + M <= 31)
   scoreB   each learner family picks its size on validation rows; the checks B0-B4
                                      -> runs/studies/s1/S1_PARTB.csv, S1_PARTB_CHECKS.csv
-  --smoke  (partB_gpu / partB_trees) a tiny version at p = 4 written to runs/studies/s1_smoke/,
+  partB_long   robustness check (PLAN.md, Amendment 2, written after Part B's results): networks at
+               p = 8, n = 30,000 with 10x patience, 5x the step budget and two learning rates
+                                     -> runs/studies/s1/partB_long/*.csv
+  scoreB_long  Part B's choices with and without the long-trained networks; checks R1, R2
+                                     -> runs/studies/s1/S1_PARTB_LONG.csv, S1_PARTB_LONG_CHECKS.csv
+  --smoke  (partB_gpu / partB_trees / partB_long) a tiny version at p = 4 written to runs/studies/s1_smoke/,
            to check the code end to end on the server; it prints timings only, no AUCs
 
 Usage (from the repo root; see the chat for the copy-paste block):
@@ -105,6 +110,16 @@ PARTB = {
     "test_n": 30_000,                            # the n at which B0-B3 are tested
     "test_p": 8,                                 # B2 is tested at p = 8
 }
+# Part B robustness check (PLAN.md, Amendment 2): written AFTER Part B's results were seen.
+PARTB_LONG = {
+    "p": 8, "n": 30_000,
+    "widths": [64, 256, 1024], "depths": [3, 4], "lrs": [3e-4, 1e-3],
+    "mlp": dict(batch=512, eval_every=50, patience=400, max_steps=100_000),   # 10x patience, 5x steps
+    "max_drop": 0.02,          # R1: exact-window median learned shortfall at p = 8 drops by < 0.02
+    "max_cells": 5,            # R2: learned+ still gets there in <= 5 of 12 window cells (exact)
+}
+SMOKE_LONG = dict(PARTB_LONG, p=4, n=1_000, widths=[16], depths=[2], lrs=[1e-3],
+                  mlp=dict(batch=512, eval_every=25, patience=4, max_steps=200))
 SMOKE = {
     "ps": [4], "n_grid": [300, 1_000], "fourier_mults": [1, 4], "mlp_widths": [16, 64],
     "mlp_depths": [2], "mlp": dict(lr=1e-3, batch=512, eval_every=25, patience=4, max_steps=300),
@@ -646,13 +661,21 @@ def do_partB_gpu(gpus, smoke):
     cfg = partB_cfg(smoke)
     jobs = _gpu_partB_jobs(cfg, smoke)
     print(f"{len(jobs)} GPU jobs on {gpus} GPU(s), p = {cfg['ps']}, n = {cfg['n_grid']}", flush=True)
+    fails = _run_gpu_pool(jobs, gpu_partB_job, gpus)
+    print(f"done, {fails} failed" + ("; rerun the same command to retry (finished files are skipped)" if fails else ""))
+    if fails:
+        sys.exit(1)
+
+
+def _run_gpu_pool(jobs, fn, gpus):
+    """run jobs on a pool of spawned workers, one per GPU; returns the number of failures"""
     ctx = mp.get_context("spawn")
     idq = ctx.Queue()
     for i in range(gpus):
         idq.put(i)
     t0, fails = time.time(), 0
     with ProcessPoolExecutor(gpus, mp_context=ctx, initializer=_gpu_init, initargs=(idq,)) as ex:
-        futs = {ex.submit(gpu_partB_job, j): j for j in jobs}
+        futs = {ex.submit(fn, j): j for j in jobs}
         for k, fu in enumerate(as_completed(futs), 1):
             try:
                 st, nm = fu.result()
@@ -660,9 +683,117 @@ def do_partB_gpu(gpus, smoke):
             except Exception:
                 fails += 1
                 print(f"[{k}/{len(jobs)}] FAILED {futs[fu][:3]}\n{traceback.format_exc()}", flush=True)
+    return fails
+
+
+def long_dir(smoke=False):
+    return Path("runs/studies/s1_smoke/partB_long") if smoke else OUT / "partB_long"
+
+
+def long_cfg(smoke=False):
+    return SMOKE_LONG if smoke else PARTB_LONG
+
+
+def long_job(args):
+    """one network shape and learning rate, trained much longer, on every teacher at (p, n)"""
+    w, dep, lr, smoke = args
+    cfg = long_cfg(smoke)
+    p, n = cfg["p"], cfg["n"]
+    f = long_dir(smoke) / f"mlplong_p{p}_w{w}_d{dep}_lr{lr:g}_n{n}.csv"
+    label = f"mlp_long p{p} n{n} w{w} d{dep} lr{lr:g}"
+    if f.exists():
+        return "skip", label
+    import torch
+    from studies.common import torchlearn as tl
+    torch.set_num_threads(1)
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    dev = os.environ.get(bs.TORCH_ENV, "cpu")
+    t0 = time.time()
+    Y, names = load_teachers(p)
+    Z = bs.pool_inputs(p)[:n_rows()]
+    tr, va, te = splits(n, PARTB["val_frac"])
+    res = tl.train_mlps(Z[tr], Y[tr], Z[va], Y[va], Z[te], Y[te], w, dep, dev,
+                        seed=_seed(f"s1b_long_p{p}_w{w}_d{dep}_lr{lr:g}_n{n}"), lr=lr, **cfg["mlp"])
+    rows = _rows_out(names, "mlp_long", f"w{w}_d{dep}_lr{lr:g}", res["params"], n, res, "best_step")
+    for r in rows:
+        r["steps"] = int(res["steps"])
+    _write(f, rows)
+    return f"ok {time.time() - t0:.0f}s ({res['steps']} steps)", label
+
+
+def do_partB_long(gpus, smoke):
+    if gpus < 1 or gpus > 31:
+        raise SystemExit("STOP: --gpus must be 1-31")
+    cfg = long_cfg(smoke)
+    jobs = [(w, d, lr, smoke) for w in cfg["widths"] for d in cfg["depths"] for lr in cfg["lrs"]]
+    jobs.sort(key=lambda j: -(j[0] ** 2 * j[1]))
+    print(f"{len(jobs)} long-training jobs on {gpus} GPU(s), p = {cfg['p']}, n = {cfg['n']}", flush=True)
+    fails = _run_gpu_pool(jobs, long_job, gpus)
     print(f"done, {fails} failed" + ("; rerun the same command to retry (finished files are skipped)" if fails else ""))
     if fails:
         sys.exit(1)
+
+
+def checks_long(S, cfg=PARTB_LONG):
+    """R1, R2: does long training change Part B's picture at p = 8? S = selected_table on Part B +
+    long-training rows, with choices 'learned' (Part B) and 'learned_long' (Part B + long nets)"""
+    p, n, tol = cfg["p"], cfg["n"], PARTB["gets_there"]
+    before = cell_shortfall(S, "learned", n, p, "Q", region="window")
+    after = cell_shortfall(S, "learned_long", n, p, "Q", region="window")
+    q = S[(S.n == n) & (S.p == p) & (S.kind == "Q") & (S.region == "window")]
+    m_before = float(q[q.choice == "learned"].shortfall.median())
+    m_after = float(q[q.choice == "learned_long"].shortfall.median())
+    there = int((after <= tol).sum())
+    rows = [("R1", f"exact, window, p = {p}: median learned shortfall drops by < {cfg['max_drop']}",
+             f"{m_before:.3f} -> {m_after:.3f} (drop {m_before - m_after:.3f})", m_before - m_after < cfg["max_drop"]),
+            ("R2", f"exact, window, p = {p}: learned (with long nets) gets there in <= {cfg['max_cells']} of 12 cells",
+             f"{there}/12 (Part B: {int((before <= tol).sum())}/12)", there <= cfg["max_cells"])]
+    return pd.DataFrame(rows, columns=["check", "what", "value", "held"])
+
+
+def do_scoreB_long():
+    cfg = PARTB_LONG
+    p, n = cfg["p"], cfg["n"]
+    P = pd.concat([pd.read_csv(f) for f in sorted(partB_dir().glob(f"*_p{p}_*n{n}*.csv"))], ignore_index=True)
+    P = P[P.n == n]
+    files = sorted(long_dir().glob("*.csv"))
+    if not files:
+        raise SystemExit("STOP: no long-training files found")
+    Lg = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    M = pd.read_csv(OUT / "S1_TEACHERS.csv")
+    ref = P[P.learner == "ref"][["name", "n", "test_auc"]].rename(columns={"test_auc": "ref_auc"})
+    parts = []
+    for ch, fs, src in (("learned", ["mlp", "gbt"], P), ("learned_long", ["mlp", "gbt", "mlp_long"], pd.concat([P, Lg], ignore_index=True)),
+                        ("mlp", ["mlp"], P), ("mlp_long", ["mlp_long"], Lg)):
+        s = pick_by_validation(src, fs)[["name", "n", "learner", "config", "test_auc"]]
+        s.insert(0, "choice", ch)
+        parts.append(s)
+    S = pd.concat(parts).merge(ref, on=["name", "n"])
+    S["shortfall"] = S.ref_auc - S.test_auc
+    S = S.merge(M[["name", "p", "kind", "c", "tau", "seed", "region"]], on="name")
+    S.to_csv(OUT / "S1_PARTB_LONG.csv", index=False)
+    pd.set_option("display.width", 220)
+    S["group"] = S.kind + ", " + np.where(S.region == "window", "window", S.region)
+    print(f"\nmedian shortfall at p = {p}, n = {n}: Part B choices vs with long-trained networks added")
+    t = S.groupby(["group", "choice"]).shortfall.median().unstack("choice")
+    print(t[["mlp", "mlp_long", "learned", "learned_long"]].to_string(float_format=lambda v: f"{v:.3f}"))
+    w = S[S.region == "window"].pivot_table(index=["kind", "name"], columns="choice", values="shortfall")
+    imp = (w.learned - w.learned_long)
+    print("\nper window teacher, improvement from long training (learned - learned_long): "
+          f"median {imp.median():.4f}, 90th percentile {imp.quantile(0.9):.4f}, max {imp.max():.4f}")
+    print("\nwhich long network wins on validation, and how long it trained (window teachers):")
+    lw = Lg.merge(M[["name", "region"]], on="name")
+    lw = lw[lw.region == "window"]
+    best = lw.loc[lw.groupby("name").val_loss.idxmin()]
+    print(best.config.value_counts().to_string())
+    print(f"best checkpoint step: median {best.best_step.median():.0f}; share stopped at max_steps "
+          f"{(lw.steps >= cfg['mlp']['max_steps']).mean():.2f} of jobs")
+    K = checks_long(S, cfg)
+    K.to_csv(OUT / "S1_PARTB_LONG_CHECKS.csv", index=False)
+    print("\n=== robustness checks (Amendment 2) ===")
+    print(K.to_string(index=False))
+    print(f"\nwrote {OUT / 'S1_PARTB_LONG.csv'} and {OUT / 'S1_PARTB_LONG_CHECKS.csv'}")
 
 
 def gbt_job(args):
@@ -739,7 +870,7 @@ FAMILY_GROUPS = {"fixed": ["poly", "fourier", "rff"], "learned": ["mlp", "gbt"]}
 
 def pick_by_validation(P, learners):
     """for each (teacher, n): the row with the lowest validation loss among `learners`"""
-    sub = P[P.learner.isin(learners) & np.isfinite(P.val_loss)]
+    sub = P[P.learner.isin(learners) & np.isfinite(P.val_loss)].reset_index(drop=True)   # unique row labels
     return sub.loc[sub.groupby(["name", "n"]).val_loss.idxmin()]
 
 
@@ -870,7 +1001,7 @@ def do_scoreB():
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("phase", choices=["banks", "teachers", "partA", "scoreA",
-                                      "partB_gpu", "partB_trees", "scoreB"])
+                                      "partB_gpu", "partB_trees", "scoreB", "partB_long", "scoreB_long"])
     ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--ps", default=",".join(map(str, DESIGN["ps"])))
     ap.add_argument("--gpus", type=int, default=0)
@@ -893,8 +1024,12 @@ def main():
         do_partB_gpu(a.gpus, a.smoke)
     elif a.phase == "partB_trees":
         do_partB_trees(a.workers, a.smoke)
-    else:
+    elif a.phase == "scoreB":
         do_scoreB()
+    elif a.phase == "partB_long":
+        do_partB_long(a.gpus, a.smoke)
+    else:
+        do_scoreB_long()
 
 
 if __name__ == "__main__":

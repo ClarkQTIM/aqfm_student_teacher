@@ -222,3 +222,41 @@ networks and trees do better than fixed bases but still fall short.
 - **Smoke test first.** `--smoke` runs a tiny version at p = 4 (n ≤ 1,000, two small
   networks, few rounds), written to `runs/studies/s1_smoke/`. It prints timings only, no AUCs.
 
+
+## 10. Amendment 2 (2026-10-29): robustness check of network training (post hoc)
+
+*Written **after** Part B's results (`RESULTS.md`). It's a check on one worry about those
+results, not a new test of the hypothesis.*
+
+**The worry.** In the window, especially for mean-field labels at 10–12 qubits, validation often
+picked the smallest network, and some teachers stay near chance for every learner. Part B gave
+every network one learning rate (10⁻³) and stopped training after 40 checks (2,000 steps)
+without improvement. If the hard labels need much longer training, or a smaller learning rate,
+Part B overstates how hard they are.
+
+**The check.**
+- **Where:** p = 8, n = 30,000, all 99 teachers. That's the qubit count B2 was tested at.
+- **What changes:** networks of width {64, 256, 1024} × hidden layers {3, 4}, at learning rates
+  3 × 10⁻⁴ and 10⁻³.
+  - Patience is 400 checks (20,000 steps), 10× Part B's.
+  - The budget is up to 100,000 steps, 5× Part B's.
+  - Everything else is as in Part B.
+- **How it's scored:** "learned+long" is the best of Part B's networks, Part B's trees and these
+  long-trained networks, picked on validation loss as before. It's compared with Part B's
+  "learned".
+
+**Predictions (fixed now).**
+
+| | Prediction |
+|---|---|
+| **R1** | The exact-window median learned shortfall at p = 8 (Part B: 0.077) drops by **less than 0.02** |
+| **R2** | Learned+long still gets there in **at most 5 of 12** window cells (exact) at p = 8 (Part B: 1) |
+
+Also reported: the same for mean-field and the controls; the per-teacher improvement; and which
+long network wins and at what step.
+
+- **If R1 or R2 fails:** Part B's networks were undertrained. Part B would then be rerun with
+  the long-training settings at every p before its conclusions are used.
+
+**Run.** `partB_long --gpus 2` (12 jobs), then `scoreB_long`. A smoke version (`--smoke`) runs
+at p = 4 first.

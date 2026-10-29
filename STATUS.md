@@ -1,6 +1,6 @@
 # Where we are
 
-*Updated 2026-10-28. One page; details live in the linked write-ups.*
+*Updated 2026-10-29. One page; details live in the linked write-ups.*
 
 **The question for the paper:** is there a setting where the annealed quantum feature map
 (AQFM) gives labels that classical methods can't learn, and is that because of the quantum
@@ -14,12 +14,13 @@ part?
 | 2 | **The geometry agrees.** A label-free measure from theory (Huang et al. 2021) picks out the same window: AUROC 0.95. | `docs/geometry_results.md` |
 | 3 | **Mean-field doesn't catch up** as qubits are added. Inside the window it still misses about 80% up to 16 qubits; outside it, it becomes exact. | `studies/s2_meanfield/RESULTS.md` |
 | 4 | **Polynomials stay flat in the window,** even with 30,000 rows and no noise. Their difficulty is set by the anneal time, not by the qubit count. | `studies/s1_scaling/RESULTS.md` (Part A) |
+| 5 | **Networks and boosted trees fall short too** in the window, somewhat more as qubits are added (0.02 → 0.06–0.11 AUC). **But mean-field labels are even harder for them**, so that difficulty comes from the anneal, not the quantum part. The quantum claim rests on result 3. | `studies/s1_scaling/RESULTS.md` (Part B) |
 
 ## Left for the paper
 
 | | What | Why | Status |
 |---|---|---|---|
-| 1 | **Neural networks and gradient-boosted trees** (S1 Part B), from 300 to 30,000 rows | The biggest remaining threat. If they get there with enough data, the gap is a small-data effect. | predictions fixed (`studies/s1_scaling/PLAN.md` §9); code ready; **run 2026-10-28** |
+| 1 | **Robustness check for the networks** (longer training, two learning rates; p = 8) | Rules out "the networks were undertrained" | plan fixed (`studies/s1_scaling/PLAN.md` §10); **run 2026-10-29** |
 | 2 | **One stronger classical approximation** than mean-field (pair or cluster corrections) | A reviewer will ask whether mean-field was too weak a twin | not started |
 
 ## Next paper

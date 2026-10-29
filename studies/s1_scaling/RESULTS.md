@@ -1,10 +1,66 @@
-# S1 results, Part A: how complicated are the map's label functions?
+# S1 results: what does it take for a classical model to match the map?
 
-*Run 2026-10-27/28 on ophlappc06: exact banks on 2 GPUs, mean-field and J = 0 on CPU. The plan
-(Part A predictions fixed in commit 045d6e7) is in `PLAN.md`. Log: `runs/s1_partA.log`. Table:
-`runs/studies/s1/S1_PARTA.csv`. Figures are made from that table by `figures.py`.*
+*Part A run 2026-10-27/28 and Part B run 2026-10-28/29, both on ophlappc06 (2 L40S GPUs + CPU).
+Plans and predictions: `PLAN.md` (Part A fixed in commit 045d6e7; Part B in Amendment 1, §9,
+fixed before any Part B learner ran). Logs: `runs/s1_partA.log`, `runs/s1_partB.log`. Tables:
+`runs/studies/s1/S1_PARTA.csv`, `S1_PARTB.csv`. Figures are made from those tables by
+`figures.py` (Part A) and `figures_partB.py` (Part B).*
 
-## In plain language
+## Part B in plain language: can flexible classical learners get there?
+
+**What we asked.** Part A showed polynomials can't copy the map's labels in the window. But
+polynomials are a weak opponent. So we tried the strongest generic classical learners we have:
+neural networks (12 shapes, up to 3 million parameters) and gradient-boosted trees (12
+settings), from 300 to 30,000 labelled examples, at 4 to 12 qubits. Each learner picked its own
+size on held-out validation rows, as a practitioner would. The yardstick is the "open-book"
+student, a simple linear model on the map's own outputs.
+
+**What we found.**
+
+- **Even the flexible learners don't get there in the window.** They beat the fixed bases
+  (polynomials, Fourier, random Fourier features) clearly, but rarely match the open-book
+  student. With exact-map labels, they get within 0.01 AUC on 14% of teachers at 4 qubits, and
+  on none at 10–12 qubits. On the easy short-anneal control, they get there every time.
+- **It gets somewhat harder with more qubits.** For exact-map labels the median gap grows from
+  0.02 AUC at 4 qubits to 0.06–0.11 at 8–12.
+
+![How far the best classical learner falls short, against the number of qubits](figures/fig_partB_vs_qubits.png)
+
+- **The difficulty is not quantum.** The mean-field labels are *harder* for classical learners,
+  and get harder faster: their gap grows from 0.05 to 0.16. We had predicted the two would grow
+  about equally; the difference points away from a quantum effect, not toward one. So what makes
+  these labels hard to learn belongs to the Ising-type anneal, which mean-field shares.
+- **More data helps, but slowly, and less at more qubits.** At 4 qubits the exact-label gap
+  roughly halves with each 3× more data. At 8–12 qubits it shrinks much more slowly. We can't rule
+  out that far more data (hundreds of thousands of examples) would close it for small systems.
+
+![How far the best classical learner falls short, against the number of labelled rows](figures/fig_partB_vs_data.png)
+
+- **The anneal time drives it, as in Part A.** At 8 qubits the exact-label gap is 0.04 at
+  τ = 3 and 0.20 at τ = 20.
+- **A sign the classical opponents aren't simply broken:** labels from uncoupled qubits (J = 0),
+  which are a sum of separate one-qubit pieces, are learned almost perfectly by the Fourier
+  basis that adds up one-input sine waves (gap 0.001–0.003).
+
+**What it means.** Two separate facts:
+1. **The window's labels are hard for generic classical learners,** and somewhat harder as
+   qubits are added. That comes from the anneal dynamics, and mean-field labels have it too.
+2. **The quantum part is what mean-field can't copy** (S2).
+
+So the quantum claim rests on S2's exact-versus-mean-field gap, not on "classical learners fail".
+
+**What to be careful about.**
+- **Networks might be undertrained on the hardest labels.** At 10–12 qubits validation often
+  picks the *smallest* network for mean-field labels. On some teachers every learner, trees and
+  fixed bases included, stays below AUC 0.6. That looks like genuinely hard labels, not one
+  optimizer failing, but each network got one learning rate and early stopping with limited
+  patience. A robustness check with 10× longer training and two learning rates (PLAN.md §10,
+  Amendment 2, written after these results) is designed to settle it.
+- **30,000 examples is the most we tried.** The gap is still shrinking there.
+- **One family of opponents.** Generic learners that don't know the physics. A learner given
+  mean-field's outputs as features is S2's question, not this one.
+
+## Part A in plain language: how complicated are the labels?
 
 **What we asked.** In the window, simple classical models can't copy the quantum feature map.
 One possible reason is that the map's labels are complicated functions of the inputs. We
@@ -44,7 +100,7 @@ by the anneal time, not by the number of qubits, and it isn't specifically quant
 part shows up elsewhere: S2 found that mean-field can't reproduce the exact map in the window at
 any size up to 16 qubits. The next question is whether classical models built for oscillating
 functions (Fourier features, neural networks) also struggle, and whether *that* grows with
-qubits. That's Part B. Polynomial degree turned out to be the wrong yardstick for these
+qubits. That's Part B, above. Polynomial degree turned out to be the wrong yardstick for these
 functions.
 
 **One caveat.** At very high polynomial degree with few qubits, the fitting became numerically
@@ -53,7 +109,89 @@ before that table is used.
 
 ---
 
-## Details
+## Details, Part B
+
+### Checks (pre-registered in PLAN.md §9; tested at n = 30,000)
+
+| | Prediction | Result | |
+|---|---|---|---|
+| B0 | Sanity: the learned group gets there in the short-anneal control (c = 4, τ = 1), exact teachers, every p | largest shortfall 0.007 | **held** |
+| B1 | Fixed bases short by > 0.01 in ≥ 9 of 12 window cells (exact), every p | 12, 12, 12, 11, 12, 11 of 12 (p = 4 … 12) | **held** |
+| B2 | p = 8: learned smaller shortfall than fixed in ≥ 9 of 12 window cells, **and** gets there in ≤ 5 | better in 10 of 12; gets there in 1 of 12 | **held** |
+| B3a | Growth: median slope of the learned shortfall against p, exact, window, > 0 | +0.0045 [+0.0025, +0.0068] per qubit | **held** |
+| B3b | Not quantum-specific: exact minus mean-field slope, interval contains 0 | −0.0101 [−0.0151, −0.0029] | **failed**: mean-field labels get harder faster |
+
+Definitions:
+- **Shortfall** = open-book test AUC − learner test AUC at the same n.
+- **Learned** = best of networks and trees; **fixed** = best of Hermite polynomials, Fourier and
+  random Fourier features. "Best" means the lowest validation loss, never the test.
+- **Open-book** = L2 logistic regression on the teacher's own 3p map features, same rows, same
+  rules. Its median test AUC in the window at n = 30,000 is 0.946–0.948.
+
+### Median shortfall at n = 30,000
+
+| group | p = 4 | 5 | 6 | 8 | 10 | 12 |
+|---|---|---|---|---|---|---|
+| exact, window: learned | 0.024 | 0.042 | 0.060 | 0.077 | 0.107 | 0.063 |
+| exact, window: fixed | 0.132 | 0.130 | 0.121 | 0.104 | 0.144 | 0.077 |
+| mean-field, window: learned | 0.049 | 0.059 | 0.083 | 0.160 | 0.160 | 0.160 |
+| mean-field, window: fixed | 0.167 | 0.198 | 0.205 | 0.252 | 0.239 | 0.195 |
+| J = 0, window anneal times: learned | 0.004 | 0.004 | 0.005 | 0.007 | 0.008 | 0.009 |
+| J = 0, window anneal times: fixed | 0.001 | 0.001 | 0.001 | 0.002 | 0.002 | 0.003 |
+| exact, weak-coupling control: learned | 0.013 | 0.018 | 0.019 | 0.026 | 0.032 | 0.026 |
+| exact, short-anneal control: learned | 0.001 | 0.003 | 0.005 | 0.006 | 0.007 | 0.007 |
+
+- **The mean-field 0.160 at p = 8, 10, 12 is a coincidence of medians.** The individual teachers
+  range from 0.03 to 0.40, with quartiles [0.09, 0.28], [0.08, 0.33] and [0.11, 0.22].
+- **By family** (exact, window): networks alone 0.024–0.156; trees alone 0.027–0.107. Trees
+  are the validation choice for 163 of 216 exact-window teachers; networks for 206 of 216
+  mean-field-window teachers.
+- **J = 0:** the axis-by-axis Fourier basis matches J = 0 labels almost exactly (they are sums of
+  one-input functions). Polynomials (0.09–0.18) and random Fourier features (0.10–0.17) don't.
+- **The weak-coupling control is not easy** (0.013–0.032; no teacher gets there at any n), even
+  though mean-field is nearly exact there (S2). Another case of "hard for classical learners"
+  without any quantum part.
+
+### By anneal time (learned, median shortfall, n = 30,000)
+
+| | τ = 3 | 5 | 10 | 20 |
+|---|---|---|---|---|
+| exact, p = 4 | 0.008 | 0.019 | 0.066 | 0.196 |
+| exact, p = 8 | 0.036 | 0.049 | 0.156 | 0.203 |
+| exact, p = 12 | 0.036 | 0.053 | 0.113 | 0.171 |
+| mean-field, p = 4 | 0.012 | 0.030 | 0.125 | 0.140 |
+| mean-field, p = 8 | 0.057 | 0.161 | 0.268 | 0.257 |
+| mean-field, p = 12 | 0.103 | 0.198 | 0.185 | 0.189 |
+
+### By number of labelled rows (learned, exact, window, median shortfall)
+
+| n | p = 4 | 5 | 6 | 8 | 10 | 12 |
+|---|---|---|---|---|---|---|
+| 300 | 0.221 | 0.208 | 0.200 | 0.226 | 0.217 | 0.181 |
+| 1,000 | 0.136 | 0.168 | 0.176 | 0.161 | 0.172 | 0.153 |
+| 3,000 | 0.079 | 0.110 | 0.133 | 0.122 | 0.157 | 0.116 |
+| 10,000 | 0.044 | 0.062 | 0.089 | 0.091 | 0.137 | 0.087 |
+| 30,000 | 0.024 | 0.042 | 0.060 | 0.077 | 0.107 | 0.063 |
+
+**B4 (reported): share of teachers that get there at some n ≤ 30,000.**
+- exact, window: 0.14, 0.06, 0.03, 0.08, 0, 0 (p = 4 … 12);
+- mean-field, window: 0.11 at p = 4, then 0;
+- short-anneal control and J = 0 teachers: essentially all get there, typically by n = 3,000–30,000;
+- weak-coupling control: none.
+
+### Training health
+
+- **Share of window teachers where the chosen learner scores below AUC 0.6**: exact 0–3%;
+  mean-field 0–25% (largest at p = 10). The same teachers are near chance for fixed bases and
+  trees too.
+- **Chosen network width** (median): exact 256 at p ≤ 8, 64 at p = 10–12; mean-field 256 at
+  p ≤ 6, then 160, 40, 16.
+- **No job failed.** Run time: 1 h 57 min on 2 GPUs (179 jobs) and 38 min for the trees on 29
+  workers (270 jobs).
+
+---
+
+## Details, Part A
 
 ### Checks (pre-registered; the test is at degree 3, degree 4 is reported)
 
@@ -123,5 +261,4 @@ interpretation, not a separate test.
 **Proposed next measurement** (an amendment, post hoc): **interaction order** instead of
 degree. How much of each label function is a sum of one-input functions, however wiggly? How
 much needs pairs of inputs, and how much more than pairs? That's the part that could grow with
-p, and the part the coupling should affect. Part B (Fourier, random features, neural networks,
-boosted trees, by size and by sample count) gets its predictions fixed after that.
+p, and the part the coupling should affect. *(Parked, 2026-10-28: Part B was run first, with its predictions fixed in PLAN.md §9.)*
