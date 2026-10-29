@@ -170,6 +170,22 @@ def bank_keys(p):
 # banks
 # ---------------------------------------------------------------------------
 
+def require_gpus(n):
+    """stop before any job starts unless PyTorch can use at least n GPUs here.  Checked in a
+    separate short-lived process, so this process never imports torch (its CPU pool forks)."""
+    import subprocess
+    code = ("import sys, warnings; warnings.simplefilter('ignore'); import torch; "
+            "print(torch.__version__, torch.cuda.is_available(), torch.cuda.device_count())")
+    r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    out = r.stdout.strip().split()
+    ok = r.returncode == 0 and len(out) == 3 and out[1] == "True" and int(out[2]) >= n
+    if not ok:
+        raise SystemExit(f"STOP: PyTorch can't use {n} GPU(s) on this machine "
+                         f"({r.stdout.strip() or r.stderr.strip()[-300:]}). Wrong machine, or a GPU "
+                         "driver too old for this PyTorch build?")
+    print(f"GPU check: torch {out[0]}, {out[2]} GPU(s) usable", flush=True)
+
+
 def _gpu_init(q):
     """runs once in each GPU worker: claim one GPU index"""
     os.environ[bs.TORCH_ENV] = f"cuda:{q.get()}"
@@ -227,6 +243,8 @@ def _piece_jobs(ps, kinds):
 def do_banks(ps, gpus, cpu_workers):
     if gpus + cpu_workers > 31:
         raise SystemExit("STOP: --gpus + --cpu-workers must be <= 31 (32-core limit)")
+    if gpus:
+        require_gpus(gpus)
     q_jobs = _gpu_jobs(ps) if gpus else []
     c_jobs = _piece_jobs(ps, {"MF", "J0"} if gpus else {"Q", "MF", "J0"})
     print(f"{len(q_jobs)} exact jobs ({GPU_BLOCKS_PER_JOB} blocks each) on {gpus} GPU(s); "
@@ -658,6 +676,7 @@ def _gpu_partB_jobs(cfg, smoke):
 def do_partB_gpu(gpus, smoke):
     if gpus < 1 or gpus > 31:
         raise SystemExit("STOP: --gpus must be 1-31")
+    require_gpus(gpus)
     cfg = partB_cfg(smoke)
     jobs = _gpu_partB_jobs(cfg, smoke)
     print(f"{len(jobs)} GPU jobs on {gpus} GPU(s), p = {cfg['ps']}, n = {cfg['n_grid']}", flush=True)
@@ -725,6 +744,7 @@ def long_job(args):
 def do_partB_long(gpus, smoke):
     if gpus < 1 or gpus > 31:
         raise SystemExit("STOP: --gpus must be 1-31")
+    require_gpus(gpus)
     cfg = long_cfg(smoke)
     jobs = [(w, d, lr, smoke) for w in cfg["widths"] for d in cfg["depths"] for lr in cfg["lrs"]]
     jobs.sort(key=lambda j: -(j[0] ** 2 * j[1]))

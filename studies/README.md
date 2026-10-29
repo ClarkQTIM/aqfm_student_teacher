@@ -9,6 +9,7 @@ question about it, and each has its own folder.
 | S1 | [`s1_scaling/`](s1_scaling/PLAN.md) | As the number of qubits p grows, how much classical machinery does it take to match the map? And is that cost quantum, or does it come from the Ising-type map? | **Part A done** ([results](s1_scaling/RESULTS.md)): polynomial complexity is large in the window but set by the anneal, not by p. **Part B done:** networks and trees fall short in the window, growing slowly with p, but mean-field labels are harder still, so the cost isn't quantum. Robustness check (PLAN §10) to run |
 | S2 | [`s2_meanfield/`](s2_meanfield/PLAN.md) | Does mean-field catch up with the exact map as p grows, and how fast, in and out of the window? | **done** ([results](s2_meanfield/RESULTS.md)): mean-field does not catch up in the window, p = 2–16 |
 | S3 | [`s3_coupling/`](s3_coupling/PLAN.md) | With other couplings (nearest-neighbour chain, random signs), does a window survive that mean-field and cheap classical methods can't close? | parked |
+| S5 | [`s5_twin/`](s5_twin/PLAN.md) | Does a stronger classical twin than mean-field (DTWA, which keeps the correlations mean-field drops) copy the exact map in the window? | plan final (predictions D0–D4); code next |
 | S4 | [`s4_vqc/`](s4_vqc/PLAN.md) | Does a variational quantum circuit reach the map's performance with few parameters? That would show it has the right inductive bias where classical models don't | parked |
 
 ## How each study is kept tidy

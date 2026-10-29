@@ -180,3 +180,15 @@ def test_scoreB_long_end_to_end_on_fake_files(tmp_path, monkeypatch, capsys):
     assert np.isclose(lb, 0.10) and np.isclose(la, 0.005)
     assert not bool(K.loc["R1", "held"])                     # a drop of 0.095 > 0.02
     assert "robustness checks" in capsys.readouterr().out
+
+
+def test_require_gpus_stops_cleanly_without_gpus():
+    """on a machine without usable GPUs (like this one) the check must stop with a clear message"""
+    try:
+        import torch  # noqa: F401
+        if torch.cuda.device_count() >= 99:
+            return
+    except Exception:
+        pass
+    with pytest.raises(SystemExit, match="STOP: PyTorch can't use 99 GPU"):
+        S1.require_gpus(99)
