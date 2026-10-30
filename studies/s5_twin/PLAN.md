@@ -203,10 +203,14 @@ as each spin interacts with more others [3, 4].
   it doesn't.
 
 **What's added.**
-- **The same integrator in PyTorch** (`studies/common/torchdtwa.py`), run on the GPUs in float32.
-  - It's tested against the NumPy version: float64 to 10⁻⁹, float32 to 5 × 10⁻³ per trajectory
-    and 10⁻³ in the averages.
-  - The NumPy version is tested against three exact limits.
+- **The same integrator in PyTorch** (`studies/common/torchdtwa.py`), run on the GPUs in
+  **float64**.
+  - It's tested against the NumPy version to 10⁻⁹. The NumPy version is tested against three
+    exact limits.
+  - *Change before the run (server tests, 2026-10-30):* float32 was planned, but single
+    trajectories drifted ~0.03 from float64 after 1,600 steps (p = 5, τ = 10). The trajectories
+    are chaotic, so rounding grows exponentially. float64 removes any doubt; it costs about 2×
+    run time.
 - **Nested trajectory counts:** M = 1,024, 4,096, 16,384 and 65,536 from **one** set of
   trajectories, so the values differ only by sampling.
   - At p = 8, 4⁸ = 65,536, so the largest M is every starting point exactly: no sampling noise.

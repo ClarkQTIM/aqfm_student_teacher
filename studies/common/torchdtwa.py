@@ -3,6 +3,10 @@ PyTorch (GPU) DTWA for S5 Amendment 2: the same integrator as studies/common/dtw
 so many more trajectories are affordable.  tests/test_studies_torchdtwa.py checks it against the NumPy
 version (which is itself tested against three exact limits) before it is used.
 
+Precision: float64 by default.  In the window the classical trajectories are chaotic: in float32,
+single trajectories drift ~0.03 from float64 after 1,600 steps (rounding grows exponentially), so
+float32 is not used for results.
+
 nested_banks() averages over NESTED prefixes of one set of trajectories (M_1 < M_2 < ... <= M), so the
 banks at different M differ only by sampling, and the starting points are a random permutation of
 the full discrete set when 4^p <= M (every prefix is then a random subset without replacement).
@@ -30,7 +34,7 @@ def starting_points(p: int, M: int, rng: np.random.Generator) -> np.ndarray:
     return S
 
 
-def evolve_torch(X, S0, J, tau, n_steps, device, dtype=torch.float32):
+def evolve_torch(X, S0, J, tau, n_steps, device, dtype=torch.float64):
     """X (m, p), S0 (M, p, 3) -> final trajectories (m, M, p, 3) on `device` (standard components).
     Same steps as dtwa.evolve: z-rotation by dt s h (h from this trajectory's sz), x-rotation by
     2 dt (1 - s), z-rotation with the refreshed field."""
@@ -76,7 +80,7 @@ def bank_prefix(S, n):
     return torch.cat(parts, 1).cpu().numpy()
 
 
-def nested_banks(X, J, tau, n_steps, Ms, rng, device, chunk=50, dtype=torch.float32):
+def nested_banks(X, J, tau, n_steps, Ms, rng, device, chunk=50, dtype=torch.float64):
     """{M_k: bank (m, 3p + 3q)} for nested prefixes Ms (ascending; capped at the number of starting
     points), plus 'loc_var': per-row trajectory variance of the 3p single-qubit values at the largest
     M (for the signal-to-noise diagnostic).  Rows go through in chunks."""
