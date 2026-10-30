@@ -158,6 +158,34 @@ were committed and pushed (e65eada), and they are unchanged.
 **Code:** `studies/common/dtwa.py` (the method), `studies/s5_twin/run.py` (phases `time`, `banks`,
 `measure`, `score`). Tests: `tests/test_studies_s5.py`. Outputs: `runs/studies/s5/`.
 
+## 9. Amendment 1 (2026-10-29, AFTER seeing the first scoring at M = 1,024)
+
+**What the first scoring showed** (`runs/s5.log`; provisional):
+- **D2:** median window U_DTWA at p = 12 was 0.663 (mean-field 0.818).
+- **D0 and D1 failed, but only at small p.** On the short-anneal control, DTWA was worse than
+  mean-field at p = 3–6 (with all starting points enumerated at p ≤ 5, so this isn't sampling
+  noise). It was essentially exact from p = 10.
+- **The noise check flagged many cells,** most at c = 2. There, U at M/4 exceeded U at M by up
+  to 0.19.
+
+**1. Coupled-case code check (added).** The two original checks don't involve the coupling. A
+new test runs fields + coupling with no driver (s held at 1). In that case DTWA's single-qubit
+values are exact, because every s_z is conserved and averaging over s_z = ±1 gives the exact
+product of cosines. `dtwa.evolve` matches the exact values to 10⁻¹⁰ at p = 2, 3, 4 and 6. So
+the coupling code (sign, factor 2, field from the other spins) is right. The small-p failures of
+D0 and D1 are DTWA's own limitation, not a bug. That's consistent with its accuracy improving
+as each spin interacts with more others [3, 4].
+
+**2. Noise: the plan's rule is applied as written.** Every flagged cell is rerun at 4M = 4,096
+(`banks --flagged --M 4096`), and the checks are rescored on the larger-M banks.
+- **The bias works for the quantum claim:** noisy DTWA features lower R², so U looks higher.
+  That's why it has to be removed before D2 is read.
+- **Reported, not a test:** U extrapolated to infinitely many trajectories, (4·U(M) − U(M/4))/3.
+  That's the standard first-order correction if the bias shrinks like 1/M. If the extrapolated
+  value at p = 12 is close to 0.3, D2 is reported as unsettled, whatever the test gives.
+
+**No prediction changed.**
+
 ## References
 
 1. Schachenmayer, J., Pikovski, A. & Rey, A. M. (2015). Many-body quantum spin dynamics with Monte Carlo trajectories on a discrete phase space. *Physical Review X* 5, 011022. [arXiv:1408.4441](https://arxiv.org/abs/1408.4441)

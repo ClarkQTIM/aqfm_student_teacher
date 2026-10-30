@@ -48,9 +48,11 @@ def initial_points(p: int, M: int, rng=None):
     return S
 
 
-def evolve(X, S0, J, tau, n_steps):
+def evolve(X, S0, J, tau, n_steps, s_fixed=None):
     """classical trajectories.  X (m, p) inputs; S0 (M, p, 3) starting vectors, shared by every
-    row.  Returns S (m, M, p, 3) at the end of the anneal (standard components)."""
+    row.  Returns S (m, M, p, 3) at the end of the anneal (standard components).
+    s_fixed: hold s constant instead of the anneal schedule (tests only; s_fixed = 1 is pure
+    fields + coupling with no driver, where DTWA's single-qubit values are exact)."""
     X = np.atleast_2d(np.asarray(X, dtype=float))
     m, p = X.shape
     S = np.broadcast_to(S0, (m,) + S0.shape).copy()               # (m, M, p, 3)
@@ -66,7 +68,7 @@ def evolve(X, S0, J, tau, n_steps):
         return sx * c + sy * s, sy * c - sx * s
 
     for k in range(n_steps):
-        s = (k + 0.5) / n_steps
+        s = (k + 0.5) / n_steps if s_fixed is None else s_fixed
         sx, sy = zrot(sx, sy, dt * s * field(sz))
         th = 2.0 * dt * (1.0 - s)
         c, sn = np.cos(th), np.sin(th)

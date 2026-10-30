@@ -102,3 +102,19 @@ def test_end_to_end_tiny(tmp_path, monkeypatch):
     K = pd.read_csv(tmp_path / "s5" / "S5_CHECKS.csv")
     assert list(K.check) == ["D0", "D1", "D2", "D3"]
     assert len(pd.read_csv(tmp_path / "s5" / "S5_NOISE_FLAGS.csv")) == 0   # p <= 3: enumerated
+
+
+@pytest.mark.parametrize("p,J,t", [(2, 1.0, 0.7), (3, 2.0, 0.4), (4, 4.0 / 3, 1.3), (6, 0.8, 2.0)])
+def test_dtwa_coupling_exact_for_pure_ising(p, J, t):
+    """With no driver (s = 1), fields and all-to-all coupling only: every sz is conserved, so each
+    trajectory just precesses, and averaging over sz = +-1 gives the exact product of cosines.
+    DTWA's single-qubit values must then equal the exact ones, which tests the coupling code
+    (its sign, the factor 2 and the field from the other spins) through dtwa.evolve itself."""
+    from aqfm_prescreen.aqfm import data_diagonal_batch, observables_batch, z_signs
+    X = np.random.default_rng(20 + p).standard_normal((5, p))
+    dd = data_diagonal_batch(X, J, z_signs(p))
+    psi = np.full((5, 1 << p), 2.0 ** (-p / 2), complex) * np.exp(-1j * t * dd)
+    exact = observables_batch(psi)[:, :3 * p]
+    S0 = dtwa.initial_points(p, 4 ** p)
+    B = dtwa.bank_from_trajectories(dtwa.evolve(X, S0, J, t, 50, s_fixed=1.0))
+    assert np.abs(B[:, :3 * p] - exact).max() < 1e-10

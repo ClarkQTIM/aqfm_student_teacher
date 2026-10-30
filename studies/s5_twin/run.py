@@ -217,7 +217,8 @@ def per_sample(BQ, BMF, BDT, BDT_small, p, c, cell):
 
 def point_values(a):
     U = lambda r2: float(np.median(r2.sum(0) / a["d2"].sum(0)))
-    v = dict(U_DTWA=U(a["r2_dt"]), U_DTWA_small=U(a["r2_dt_small"]), U_MF=U(a["r2_mf"]),
+    u, us = U(a["r2_dt"]), U(a["r2_dt_small"])
+    v = dict(U_DTWA=u, U_DTWA_small=us, U_DTWA_extrap=(4 * u - us) / 3, U_MF=U(a["r2_mf"]),
              E_DTWA=float(np.sqrt(a["e_dt"].mean())), E_MF=float(np.sqrt(a["e_mf"].mean())))
     if "ccoll_q" in a:
         v.update(C_coll_exact=float(a["ccoll_q"].mean()), C_coll_DTWA=float(a["ccoll_dt"].mean()),
@@ -340,6 +341,13 @@ def do_score():
     print("\nU (share of the exact labels the twin can't explain), median over cells:")
     t = M.groupby(["region", "p"])[["U_DTWA", "U_MF"]].median().unstack("region")
     print(t.to_string(float_format=lambda v: f"{v:.3f}"))
+    if "U_DTWA_extrap" in M:
+        print("\nreported, not a test (PLAN Section 9): U_DTWA extrapolated to infinitely many trajectories,\n"
+              "(4 U(M) - U(M/4)) / 3, assuming the sampling bias shrinks like 1/M; window, median over cells:")
+        w = M[M.region == "window"].groupby("p")[["U_DTWA_small", "U_DTWA", "U_DTWA_extrap", "U_MF"]].median()
+        print(w.rename(columns={"U_DTWA_small": "U(M/4)", "U_DTWA": "U(M)", "U_DTWA_extrap": "U(M->inf)"})
+              .to_string(float_format=lambda v: f"{v:.3f}"))
+        print("M per cell (largest available):", M.groupby("M").size().to_dict())
     print("\nwindow U_DTWA by anneal time (median over c):")
     print(M[M.region == "window"].groupby(["tau", "p"]).U_DTWA.median().unstack("p").to_string(float_format=lambda v: f"{v:.3f}"))
     print("\nwindow: DTWA's correlations vs exact (median over cells): C_coll exact, C_coll DTWA, correlation of ZZ values")
