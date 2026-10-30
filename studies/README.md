@@ -10,7 +10,7 @@ question about it, and each has its own folder.
 | S2 | [`s2_meanfield/`](s2_meanfield/PLAN.md) | Does mean-field catch up with the exact map as p grows, and how fast, in and out of the window? | **done** ([results](s2_meanfield/RESULTS.md)): mean-field does not catch up in the window, p = 2–16 |
 | S3 | [`s3_coupling/`](s3_coupling/PLAN.md) | With other couplings (nearest-neighbour chain, random signs), does a window survive that mean-field and cheap classical methods can't close? | parked |
 | S5 | [`s5_twin/`](s5_twin/PLAN.md) | Does a stronger classical twin than mean-field (DTWA, which keeps the correlations mean-field drops) copy the exact map in the window? | plan final (predictions D0–D4); code ready, to run |
-| S4 | [`s4_vqc/`](s4_vqc/PLAN.md) | Does a variational quantum circuit reach the map's performance with few parameters? That would show it has the right inductive bias where classical models don't | parked |
+| S4 | [`s4_vqc/`](s4_vqc/PLAN.md) | Does a variational quantum circuit reach the map's performance with few parameters? Generic circuits against ones built from the map's own Hamiltonian | plan final (predictions V0–V4); code ready, to run |
 
 ## How each study is kept tidy
 

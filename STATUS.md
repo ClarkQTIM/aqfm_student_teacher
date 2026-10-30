@@ -47,7 +47,7 @@ mean-field's, not *harder to learn*.
 
 | | What | Status |
 |---|---|---|
-| 3 | **Variational quantum circuit** (S4): does the right quantum structure help, with few parameters? | plan sketched (`studies/s4_vqc/PLAN.md`); needs architecture decisions |
+| 3 | **Variational quantum circuit** (S4): does the right quantum structure help, with few parameters? Generic circuits vs ones built from the map's own Hamiltonian (circuit diagram: `studies/s4_vqc/figures/fig_vqc_circuits.png`) | plan final (predictions V0–V4); code ready, to run |
 
 ## Parked (doesn't change the paper's claim)
 
