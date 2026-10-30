@@ -40,8 +40,8 @@ mean-field's, not *harder to learn*.
 
 | | What | Why | Status |
 |---|---|---|---|
-| 1 | **Robustness check for the networks** (longer training, two learning rates; p = 8) | Rules out "the networks were undertrained" (question A) | plan fixed (`studies/s1_scaling/PLAN.md` §10); **run 2026-10-29** |
-| 2 | **One stronger classical twin** than mean-field (pair or cluster corrections) | The quantum claim rests on question B, so a reviewer will ask whether mean-field was just too weak a twin | plan final (`studies/s5_twin/PLAN.md`, DTWA; literature in §2); code ready, **run 2026-10-29** |
+| 1 | **Robustness check for the networks** (longer training, two learning rates; p = 8) | Rules out "the networks were undertrained" (question A) | **done**: no change (0.077 → 0.077); R1, R2 held |
+| 2 | **One stronger classical twin** than mean-field (pair or cluster corrections) | The quantum claim rests on question B, so a reviewer will ask whether mean-field was just too weak a twin | first run done (D2 held at 0.68, but DTWA not converged in M; at c = 2 DTWA catches up); **convergence run on GPU (Amendment 2), 2026-10-30** |
 
 ## Next paper
 

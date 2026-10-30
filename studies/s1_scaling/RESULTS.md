@@ -60,12 +60,11 @@ and others don't:
 The quantum part makes the exact map's labels *different* from mean-field's, not *harder to learn*.
 
 **What to be careful about.**
-- **Networks might be undertrained on the hardest labels.** At 10–12 qubits validation often
-  picks the *smallest* network for mean-field labels. On some teachers every learner, trees and
-  fixed bases included, stays below AUC 0.6. That looks like genuinely hard labels, not one
-  optimizer failing, but each network got one learning rate and early stopping with limited
-  patience. A robustness check with 10× longer training and two learning rates (PLAN.md §10,
-  Amendment 2, written after these results) is designed to settle it.
+- **Were the networks undertrained? No (checked).** A robustness check (PLAN.md §10,
+  Amendment 2, written after these results) retrained the networks at 8 qubits with 10× the
+  patience, up to 100,000 steps and two learning rates. The best classical learner's median gap
+  in the window stayed at **0.077**, and it gets there in 1 of 12 window cells, as before
+  (details below).
 - **30,000 examples is the most we tried.** The gap is still shrinking there.
 - **One family of opponents.** Generic learners that don't know the physics. A learner given
   mean-field's outputs as features is S2's question, not this one.
@@ -210,6 +209,40 @@ Definitions:
   p ≤ 6, then 160, 40, 16.
 - **No job failed.** Run time: 1 h 57 min on 2 GPUs (179 jobs) and 38 min for the trees on 29
   workers (270 jobs).
+
+### Robustness check: longer network training (Amendment 2, run 2026-10-29)
+
+- **Setup:** p = 8, n = 30,000, all 99 teachers. Networks of width {64, 256, 1024} × {3, 4}
+  hidden layers, learning rates 3 × 10⁻⁴ and 10⁻³, patience 400 checks (20,000 steps), up to
+  100,000 steps.
+- **Comparison:** "learned + long" is the best of Part B's networks and trees and these networks,
+  picked on validation loss.
+- **Run:** ophlslcec08, 2 × H100, 17 minutes. Log: `runs/s1_partB_long_score.log`.
+
+| | Prediction | Result | |
+|---|---|---|---|
+| R1 | exact, window, p = 8: median learned shortfall drops by < 0.02 | 0.077 → 0.077 (no change) | **held** |
+| R2 | learned + long gets there in ≤ 5 of 12 window cells | 1 of 12 (Part B: 1 of 12) | **held** |
+
+**Median shortfall at p = 8, n = 30,000:**
+
+| group | networks (Part B) | networks (long) | learned (Part B) | learned + long |
+|---|---|---|---|---|
+| exact, window | 0.145 | 0.134 | 0.077 | 0.077 |
+| mean-field, window | 0.160 | 0.159 | 0.160 | 0.160 |
+| J = 0, window anneal times | 0.022 | 0.031 | 0.007 | 0.007 |
+| exact, weak-coupling control | 0.028 | 0.034 | 0.026 | 0.026 |
+| exact, short-anneal control | 0.006 | 0.006 | 0.006 | 0.006 |
+
+- **Longer training helps networks a little,** for exact-map labels (0.145 → 0.134). It doesn't
+  change the overall result: for those labels, boosted trees remain the best learner.
+- **Per window teacher, the improvement is 0** in the median and at the 90th percentile; the
+  largest single improvement is 0.137.
+- **The networks weren't cut short:** no job reached the 100,000-step limit, and the best
+  checkpoints came early (median step 700). They peak early, then overfit; more training doesn't
+  help.
+- **Conclusion:** Part B's networks were not undertrained. The window's labels are hard for
+  generic classical learners at 30,000 examples.
 
 ---
 

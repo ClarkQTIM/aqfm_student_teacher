@@ -57,6 +57,10 @@ _spec = importlib.util.spec_from_file_location("s2run_for_s5", ROOT / "studies" 
 S2 = importlib.util.module_from_spec(_spec)
 sys.modules["s2run_for_s5"] = S2
 _spec.loader.exec_module(S2)         # S2's U recipe: exact_scores, mf_design, oof_residuals
+_spec1 = importlib.util.spec_from_file_location("s1run_for_s5", ROOT / "studies" / "s1_scaling" / "run.py")
+S1 = importlib.util.module_from_spec(_spec1)
+sys.modules["s1run_for_s5"] = S1
+_spec1.loader.exec_module(S1)        # GPU pool and GPU check (Amendment 2)
 
 DESIGN = {
     "version": "s5_1",
@@ -68,6 +72,12 @@ DESIGN = {
     "noise_tol": 0.02,                              # |U(M) - U(M/4)| above this -> rerun at 4M
     "n_boot": 1000,
     "chunk": 25,                                    # rows per piece (memory: chunk x M x p x 3)
+}
+CONVERGE = {                                        # Amendment 2 (PLAN Section 10): GPU, nested M
+    "ps": [8, 12, 16],
+    "Ms": [1024, 4096, 16384, 65536],
+    "tol": 0.02,                                    # converged: |U(65536) - U(16384)| <= tol
+    "chunk": 50,
 }
 BANKS = Path("runs/studies/banks/alltoall")          # S2's exact and mean-field banks
 OUT = Path("runs/studies/s5")
@@ -363,10 +373,122 @@ def do_score():
 
 
 # ---------------------------------------------------------------------------
+# Amendment 2: convergence in M on the GPUs (PLAN Section 10)
+# ---------------------------------------------------------------------------
+
+def converge_job(args):
+    """one (p, cell): DTWA with nested M = 1,024 ... 65,536 from the same trajectories, on a GPU;
+    U and E at every M on S2's rows, readouts and folds; signal-to-noise of the features"""
+    p, c, tau, smoke = args
+    cell = cell_name(c, tau)
+    out = (Path("runs/studies/s5_smoke") if smoke else OUT) / "converge"
+    f = out / f"p{p}_{cell}.csv"
+    label = f"converge p{p} {cell}"
+    if f.exists():
+        return "skip", label
+    import torch
+    from studies.common import torchdtwa as td
+    torch.set_num_threads(1)
+    dev = os.environ.get(bs.TORCH_ENV, "cpu")
+    Ms = [256, 1024] if smoke else CONVERGE["Ms"]
+    t0 = time.time()
+    X = bs.pool_inputs(p)[:bs.BLOCK]
+    rng = np.random.default_rng(_seed(f"s5c_starts_p{p}_{cell}"))
+    R = td.nested_banks(X, coupling(p, c, "Q"), tau, strang_steps(tau), Ms, rng, dev, chunk=CONVERGE["chunk"])
+    BQ = bs.load_rows(BANKS, p, "Q", c, tau)
+    BMF = bs.load_rows(BANKS, p, "MF", c, tau)
+    S = S2.exact_scores(BQ, p, cell)
+    d2 = (S - S.mean(0)) ** 2
+    rQ = _local(BQ, p)
+    rows = []
+    for M in sorted(k for k in R if isinstance(k, int)):          # the nested trajectory counts
+        B = R[M]
+        r2 = S2.oof_residuals(S, S2.mf_design(B, p))
+        loc = B[:, :3 * p]
+        sig = loc.var(0)                                             # spread of each feature over rows
+        noise = R["loc_var"].mean(0) / M                             # sampling variance of each average
+        rows.append(dict(p=p, cell=cell, c=c, tau=tau, M=M, M_used=R["M_used"],
+                         U_DTWA=float(np.median(r2.sum(0) / d2.sum(0))),
+                         E_DTWA=float(np.sqrt(((rQ - _local(B, p)) ** 2).sum(-1).mean())),
+                         snr_median=float(np.median(sig / np.maximum(noise, 1e-30))),
+                         snr_min=float(np.min(sig / np.maximum(noise, 1e-30)))))
+    U_MF = float(np.median(S2.oof_residuals(S, S2.mf_design(BMF, p)).sum(0) / d2.sum(0)))
+    for r in rows:
+        r["U_MF"] = U_MF
+    S1._write(f, rows)
+    return f"ok {time.time() - t0:.0f}s (M used {R['M_used']})", label
+
+
+def do_converge(gpus, smoke):
+    if gpus < 1 or gpus > 31:
+        raise SystemExit("STOP: --gpus must be 1-31")
+    S1.require_gpus(gpus)
+    ps = [4] if smoke else CONVERGE["ps"]
+    cl = cells()[:2] if smoke else cells()
+    jobs = [(p, x["c"], x["tau"], smoke) for p in ps for x in cl]
+    jobs.sort(key=lambda j: -(j[0] * strang_steps(j[2])))
+    print(f"{len(jobs)} convergence jobs on {gpus} GPU(s), p = {ps}, M = {[256, 1024] if smoke else CONVERGE['Ms']}",
+          flush=True)
+    fails = S1._run_gpu_pool(jobs, converge_job, gpus)
+    print(f"done, {fails} failed" + ("; rerun the same command (finished files are skipped)" if fails else ""))
+    if fails:
+        sys.exit(1)
+
+
+def do_converge_score():
+    files = sorted((OUT / "converge").glob("*.csv"))
+    if not files:
+        raise SystemExit("STOP: no convergence files")
+    C = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    reg = {cell_name(x["c"], x["tau"]): x["region"] for x in cells()}
+    C["region"] = C.cell.map(reg)
+    C.to_csv(OUT / "S5_CONVERGE.csv", index=False)
+    pd.set_option("display.width", 220)
+    Mmax = C.M.max()
+    W = C.pivot_table(index=["region", "c", "tau", "p"], columns="M", values="U_DTWA")
+    print("U_DTWA by number of trajectories (same trajectories, nested), every cell:")
+    print(W.to_string(float_format=lambda v: f"{v:.3f}"))
+    prev = sorted(C.M.unique())[-2]
+    conv = (W[Mmax] - W[prev]).abs()
+    print(f"\nconverged (|U({Mmax}) - U({prev})| <= {CONVERGE['tol']}): {int((conv <= CONVERGE['tol']).sum())} "
+          f"of {len(conv)} (p, cell)")
+    if (conv > CONVERGE["tol"]).any():
+        print(conv[conv > CONVERGE["tol"]].to_string(float_format=lambda v: f"{v:.3f}"))
+    print("\nsignal-to-noise of the DTWA features (median over features; spread over rows / sampling variance):")
+    print(C.pivot_table(index=["region", "c", "tau", "p"], columns="M", values="snr_median")
+          .to_string(float_format=lambda v: f"{v:.0f}"))
+    w = C[(C.region == "window") & (C.M == Mmax)]
+    tp = DESIGN["test_p"]
+    med = float(w[w.p == tp].U_DTWA.median())
+    print(f"\nwindow, M = {Mmax}: median U_DTWA by p (mean-field in brackets)")
+    t = w.groupby("p").agg(U_DTWA=("U_DTWA", "median"), U_MF=("U_MF", "median"))
+    print(t.to_string(float_format=lambda v: f"{v:.3f}"))
+    print("\nexploratory (seen in the first scoring, not a pre-registered split): window by coupling c, M = "
+          f"{Mmax}, median U_DTWA")
+    print(w.groupby(["c", "p"]).U_DTWA.median().unstack("p").to_string(float_format=lambda v: f"{v:.3f}"))
+    cw = conv.reset_index()
+    n_unconv = int(((cw.region == "window") & (cw.p == tp) & (cw[0] > CONVERGE["tol"])).sum())
+    settled = n_unconv <= 3
+    K = pd.DataFrame([("D2 (Amendment 2)", f"median window U_DTWA at p = {tp}, M = {Mmax} > 0.3 "
+                       f"(unsettled if > 3 of 12 window cells at p = {tp} are not converged)",
+                       f"{med:.3f}; {n_unconv}/12 window cells not converged" + ("" if settled else " -> UNSETTLED"),
+                       (med > 0.3) if settled else None),
+                      ("convergence", f"cells with |U({Mmax}) - U({prev})| <= {CONVERGE['tol']}",
+                       f"{int((conv <= CONVERGE['tol']).sum())}/{len(conv)}", None)],
+                     columns=["check", "what", "value", "held"])
+    K.to_csv(OUT / "S5_CONVERGE_CHECKS.csv", index=False)
+    print("\n=== S5 Amendment 2 ===")
+    print(K.to_string(index=False))
+    print(f"\nwrote {OUT / 'S5_CONVERGE.csv'}, {OUT / 'S5_CONVERGE_CHECKS.csv'}")
+
+
+# ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("phase", choices=["time", "banks", "measure", "score"])
+    ap.add_argument("phase", choices=["time", "banks", "measure", "score", "converge", "converge_score"])
+    ap.add_argument("--gpus", type=int, default=2)
+    ap.add_argument("--smoke", action="store_true")
     ap.add_argument("--workers", type=int, default=31)
     ap.add_argument("--M", type=int, default=DESIGN["M"])
     ap.add_argument("--ps", default=None, help="comma-separated p (default: every p with S2 banks)")
@@ -382,8 +504,12 @@ def main():
         do_banks(a.workers, a.M, a.flagged, ps)
     elif a.phase == "measure":
         do_measure(a.workers)
-    else:
+    elif a.phase == "score":
         do_score()
+    elif a.phase == "converge":
+        do_converge(a.gpus, a.smoke)
+    else:
+        do_converge_score()
 
 
 if __name__ == "__main__":

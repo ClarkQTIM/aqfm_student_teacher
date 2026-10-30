@@ -186,6 +186,48 @@ as each spin interacts with more others [3, 4].
 
 **No prediction changed.**
 
+## 10. Amendment 2 (2026-10-30, AFTER the rerun at M = 4,096): convergence in M on the GPUs
+
+**What the rerun showed** (`runs/s5.log`, 2026-10-30):
+- **D2 median at p = 12:** 0.680.
+- **29 of 154 cells were still flagged at M = 4,096,** and the gap between U(M/4) and U(M) has
+  both signs (for example p = 12, c = 8, τ = 3: 0.46 → 0.55; τ = 5: 0.48 → 0.33). That isn't a
+  simple one-way bias, so Amendment 1's extrapolation can't be trusted for these cells, and
+  D2's value may still move.
+- **Likely cause.** In long, strongly coupled anneals, DTWA's trajectories scatter, and their
+  averages carry a small signal under sampling noise. Standardizing the features amplifies that
+  noise.
+- **The fair DTWA twin is its large-M limit,** because a classical simulator can use as many
+  trajectories as it likes.
+- **Exploratory (seen, not pre-registered):** at c = 2, U_DTWA falls steeply with p; at c ≥ 4,
+  it doesn't.
+
+**What's added.**
+- **The same integrator in PyTorch** (`studies/common/torchdtwa.py`), run on the GPUs in float32.
+  - It's tested against the NumPy version: float64 to 10⁻⁹, float32 to 5 × 10⁻³ per trajectory
+    and 10⁻³ in the averages.
+  - The NumPy version is tested against three exact limits.
+- **Nested trajectory counts:** M = 1,024, 4,096, 16,384 and 65,536 from **one** set of
+  trajectories, so the values differ only by sampling.
+  - At p = 8, 4⁸ = 65,536, so the largest M is every starting point exactly: no sampling noise.
+  - Starting points are shuffled, so every prefix is a random subset.
+- **Where:** all 14 cells at p = 8, 12 and 16. Same rows, readouts and folds as before.
+- **A signal-to-noise diagnostic per cell:** the spread of each DTWA feature over rows,
+  divided by its sampling variance.
+
+**How it's read (fixed now, before the run):**
+- **Converged:** |U(65,536) − U(16,384)| ≤ 0.02.
+- **D2 is re-scored on M = 65,536:** the median window U_DTWA at p = 12 > 0.3. That replaces the
+  provisional M = 1,024 / 4,096 value.
+  - If more than 3 of the 12 window cells at p = 12 are not converged, D2 is reported as
+    **unsettled**, whatever its value.
+- **The c = 2 versus c ≥ 4 split is reported as exploratory** (median U_DTWA by c and p at
+  M = 65,536), and labeled as found after seeing the data.
+- **D0, D1 and D3 are unchanged** (their small-p results are DTWA's own limitation, Section 9).
+
+**Run:** `converge --gpus 1` (one GPU, so the VQC can use the other), then `converge_score`.
+Outputs: `runs/studies/s5/converge/`, `S5_CONVERGE.csv`, `S5_CONVERGE_CHECKS.csv`.
+
 ## References
 
 1. Schachenmayer, J., Pikovski, A. & Rey, A. M. (2015). Many-body quantum spin dynamics with Monte Carlo trajectories on a discrete phase space. *Physical Review X* 5, 011022. [arXiv:1408.4441](https://arxiv.org/abs/1408.4441)

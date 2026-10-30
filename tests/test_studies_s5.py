@@ -118,3 +118,54 @@ def test_dtwa_coupling_exact_for_pure_ising(p, J, t):
     S0 = dtwa.initial_points(p, 4 ** p)
     B = dtwa.bank_from_trajectories(dtwa.evolve(X, S0, J, t, 50, s_fixed=1.0))
     assert np.abs(B[:, :3 * p] - exact).max() < 1e-10
+
+
+def test_converge_job_and_score_with_numpy_stand_in(tmp_path, monkeypatch):
+    """the Amendment 2 phases end to end at p = 3, with a NumPy stand-in for the GPU module"""
+    import types
+    import studies.common as sc
+    fake = types.ModuleType("studies.common.torchdtwa")
+
+    def nested_banks(X, J, tau, n_steps, Ms, rng, device, chunk=50):
+        S0 = dtwa.initial_points(X.shape[1], max(Ms), rng)
+        Ms = sorted({min(M, len(S0)) for M in Ms})
+        S = dtwa.evolve(X, S0, J, tau, n_steps)
+        R = {M: dtwa.bank_from_trajectories(S, M) for M in Ms}
+        v = S.var(1)
+        R["loc_var"] = np.hstack([v[..., 0], v[..., 1], v[..., 2]])
+        R["M_used"] = len(S0)
+        return R
+    fake.nested_banks = nested_banks
+    monkeypatch.setitem(sys.modules, "studies.common.torchdtwa", fake)
+    monkeypatch.setattr(sc, "torchdtwa", fake, raising=False)
+    if "torch" not in sys.modules:
+        monkeypatch.setitem(sys.modules, "torch", types.SimpleNamespace(set_num_threads=lambda n: None))
+    banks = tmp_path / "banks"
+    monkeypatch.setattr(S5, "BANKS", banks)
+    monkeypatch.setattr(S5, "OUT", tmp_path / "s5")
+    monkeypatch.setattr(S5, "strang_steps", lambda tau: 30)
+    monkeypatch.setitem(S5.CONVERGE, "Ms", [8, 32, 64])
+    monkeypatch.setitem(S5.DESIGN, "test_p", 3)
+    p = 3
+    X = bs.pool_inputs(p)[:bs.BLOCK]
+    for cl in S5.cells():
+        for kind, method in (("Q", "strang"), ("MF", "meanfield")):
+            B = compute_bank(X, S5.coupling(p, cl["c"], "Q"), cl["tau"], n_steps=30, method=method)
+            f = bs.block_path(banks, p, kind, cl["c"], cl["tau"], 0)
+            f.parent.mkdir(parents=True, exist_ok=True)
+            np.save(f, B)
+    for cl in S5.cells():
+        st, _ = S5.converge_job((p, cl["c"], cl["tau"], False))
+        assert st.startswith("ok")
+    S5.do_converge_score()
+    C = pd.read_csv(tmp_path / "s5" / "S5_CONVERGE.csv")
+    assert len(C) == 14 * 3 and set(C.M) == {8, 32, 64} and (C.M_used == 64).all()
+    K = pd.read_csv(tmp_path / "s5" / "S5_CONVERGE_CHECKS.csv")
+    assert list(K.check) == ["D2 (Amendment 2)", "convergence"]
+    # all 4^3 = 64 points at M = 64: no sampling noise, and U there equals the enumerated DTWA bank's U
+    c4 = C[(C.cell == "c4_t5") & (C.M == 64)].iloc[0]
+    BQ = bs.load_rows(banks, p, "Q", 4.0, 5.0)
+    B64, _, _ = dtwa.dtwa_bank(X, S5.coupling(p, 4.0, "Q"), 5.0, 30, M=64)
+    Sx = S5.S2.exact_scores(BQ, p, "c4_t5")
+    U = np.median(S5.S2.oof_residuals(Sx, S5.S2.mf_design(B64, p)).sum(0) / ((Sx - Sx.mean(0)) ** 2).sum(0))
+    assert abs(c4.U_DTWA - U) < 1e-6
