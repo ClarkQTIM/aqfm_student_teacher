@@ -1,6 +1,6 @@
 # Where we are
 
-*Updated 2026-10-29. One page; details live in the linked write-ups.*
+*Updated 2026-10-30. One page; details live in the linked write-ups.*
 
 **The question for the paper:** is there a setting where the annealed quantum feature map
 (AQFM) gives labels that classical methods can't learn, and is that because of the quantum
@@ -11,10 +11,11 @@ part?
 | Question | Answer in the window | Quantum? | Results |
 |---|---|---|---|
 | **A. Can a generic classical learner learn these labels from examples?** | **No**, for exact-map labels *and* mean-field labels; mean-field's are even harder | **No.** Mean-field is classical and shares the difficulty, so it comes from the coupled anneal dynamics. | 4, 5 (also geometry G5) |
-| **B. Can mean-field, the cheap classical twin, reproduce what the exact map does?** | **No.** It misses about 80% of the exact map's labels, at every size up to 16 qubits | **Yes.** The only thing mean-field leaves out is the quantum correlations. | 1, 2, 3 |
+| **B. Can a cheap classical twin reproduce what the exact map does?** | **Mean-field: no** (misses about 80%, up to 16 qubits). **DTWA, which keeps the correlations: no at c ≥ 4** (still about 80%); **at c = 2 it catches up** | **Yes, at c ≥ 4.** At c = 2, the quantum part is increasingly cheap to copy. | 1, 2, 3, 6 |
 
 **In one sentence:** both kinds of label are hard for classical learners, but only the exact map
-does something its classical twin can't copy. The quantum part makes the labels *different* from
+does something its classical twins can't copy, and at strong coupling (c ≥ 4) that holds even for
+DTWA. The quantum part makes the labels *different* from
 mean-field's, not *harder to learn*.
 
 **Expected vs surprising.**
@@ -34,6 +35,7 @@ mean-field's, not *harder to learn*.
 | 2 | **The geometry agrees.** A label-free measure from theory (Huang et al. 2021) picks out the same window: AUROC 0.95. | `docs/geometry_results.md` |
 | 3 | **Mean-field doesn't catch up** as qubits are added. Inside the window it still misses about 80% up to 16 qubits; outside it, it becomes exact. | `studies/s2_meanfield/RESULTS.md` |
 | 4 | **Polynomials stay flat in the window,** even with 30,000 rows and no noise. Their difficulty is set by the anneal time, not by the qubit count. | `studies/s1_scaling/RESULTS.md` (Part A) |
+| 6 | **A stronger classical twin (DTWA, which keeps the correlations) doesn't copy the exact map at strong coupling.** At 12 qubits it still misses 72% (mean-field 82%); at c ≥ 4 about 80% at every size up to 16, no trend. **At c = 2 it catches up** (to about 20% at 16 qubits). The c split is exploratory. | `studies/s5_twin/RESULTS.md` |
 | 5 | **Networks and boosted trees fall short too** in the window, somewhat more as qubits are added (0.02 → 0.06–0.11 AUC). **But mean-field labels are even harder for them**, so that difficulty comes from the anneal, not the quantum part. The quantum claim rests on result 3. | `studies/s1_scaling/RESULTS.md` (Part B) |
 
 ## Left for the paper
@@ -41,13 +43,14 @@ mean-field's, not *harder to learn*.
 | | What | Why | Status |
 |---|---|---|---|
 | 1 | **Robustness check for the networks** (longer training, two learning rates; p = 8) | Rules out "the networks were undertrained" (question A) | **done**: no change (0.077 → 0.077); R1, R2 held |
-| 2 | **One stronger classical twin** than mean-field (pair or cluster corrections) | The quantum claim rests on question B, so a reviewer will ask whether mean-field was just too weak a twin | first run done (D2 held at 0.68, but DTWA not converged in M; at c = 2 DTWA catches up); **convergence run on GPU (Amendment 2), 2026-10-30** |
+| 2 | **One stronger classical twin** than mean-field (DTWA) | The quantum claim rests on question B | **done**: D2 held (0.72, converged); quantum part survives at c ≥ 4, not at c = 2 (result 6) |
+| 2b | **Confirm the c split** on couplings not used to find it (e.g. c = 3, 6) | The split was found after the first scoring | not started |
 
 ## Next paper
 
 | | What | Status |
 |---|---|---|
-| 3 | **Variational quantum circuit** (S4): does the right quantum structure help, with few parameters? Generic circuits vs ones built from the map's own Hamiltonian (circuit diagram: `studies/s4_vqc/figures/fig_vqc_circuits.png`) | plan final (predictions V0–V4); code ready, to run |
+| 3 | **Variational quantum circuit** (S4): does the right quantum structure help, with few parameters? Generic circuits vs ones built from the map's own Hamiltonian (circuit diagram: `studies/s4_vqc/figures/fig_vqc_circuits.png`) | **running** (2026-10-30, ophlslcec08 GPU 1) |
 
 ## Parked (doesn't change the paper's claim)
 
